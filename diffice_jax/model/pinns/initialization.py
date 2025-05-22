@@ -17,7 +17,7 @@ def init_single_net(parent_key, layer_widths):
 
 
 # generate weights and biases for all networks required in the problem
-def init_nets(parent_key, n_hl, n_unit, aniso=False):
+def init_nets(parent_key, n_hl, n_unit, aniso=False, basal=False):
     '''
     :param n_hl: number of hidden layers [int]
     :param n_unit: number of units in each layer [int]
@@ -28,15 +28,27 @@ def init_nets(parent_key, n_hl, n_unit, aniso=False):
     if aniso:
         # number of viscosity output is 2
         n_mu = 2
+    elif basal:
+        n_basal=1
 
     # set the neural network shape for u, v, h
     layers1 = [2] + n_hl * [n_unit] + [3]
     # set the neural network shape for mu
     layers2 = [2] + n_hl * [n_unit] + [n_mu]
+    # if inferring for basal friction, add another layer for C
+    if basal:
+        layers3 = [2] + n_hl * [n_unit] + [n_basal]
+
+    if aniso and basal:
+        print("Warning: Inferring basal friction with anisotropic visocsity, the inverse problem is underdetermined.")
 
     # generate the random key for each network
     keys = random.split(parent_key, 2)
     # generate weights and biases for
     params_u = init_single_net(keys[0], layers1)
     params_mu = init_single_net(keys[0], layers2)
-    return [params_u, params_mu]
+    if basal:
+        params_c = init_single_net(keys[0], layers3)
+        return [params_u, params_mu, params_c]
+    else:
+        return [params_u, params_mu]

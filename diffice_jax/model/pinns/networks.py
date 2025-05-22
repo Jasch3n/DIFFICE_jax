@@ -25,15 +25,20 @@ def neural_net(params, x, scl, act_s=0):
 
 
 # wrapper to create solution function with given domain size
-def solu_create(scl=1, act_s=0):
+def solu_create(scl=1, act_s=0,basal=False):
     '''
     :param scale: normalization info
     :return: function of the solution (a callable)
     '''
-    def f(params, x):
+    def f(params, x, basal=basal):
+        # print("DEBUG: solu_create thinks basal is", basal)
         # generate the NN
         uvh = neural_net(params[0], x, scl, act_s)
         mu = neural_net(params[1], x, scl, act_s)
-        sol = jnp.hstack([uvh, jnp.exp(mu)])
+        if basal:
+            c = neural_net(params[2], x, scl, act_s)
+            sol = jnp.hstack([uvh, jnp.exp(mu), jnp.exp(c)])
+        else:
+            sol = jnp.hstack([uvh, jnp.exp(mu)])
         return sol
     return f

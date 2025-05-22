@@ -8,7 +8,7 @@ import numpy as np
 import jax.numpy as jnp
 
 
-def normalize_data(data):
+def normalize_data(data,basal=False):
     '''
     :param data: original dataset
     :return X_smp, U_smp, X_ct, n_ct, data_info
@@ -29,6 +29,10 @@ def normalize_data(data):
     xct = data['xct']    # unit [m] position
     yct = data['yct']    # unit [m] position
     nnct = data['nnct']  # unit vector
+
+    # extract the ocean mask if specified, in case of basal inversion
+    if basal:
+        ocean_mask = data['ocean_mask']
 
     #%%
 
@@ -112,4 +116,7 @@ def normalize_data(data):
     # sequence of output matrix column is u,v,h
     U_star = [jnp.hstack((u_n, v_n)), h_n]
 
-    return X_star, U_star, X_ct, nnct, data_info
+    if basal:
+        return X_star, U_star, X_ct, nnct, data_info, ocean_mask
+    else:
+        return X_star, U_star, X_ct, nnct, data_info

@@ -24,17 +24,18 @@ def extract_scale(scale_info):
     u0m = lax.max(u0, v0)
     l0m = lax.max(lx0, ly0)
     # calculate the scale of viscosity and strain rate
+    c0 = rho * gd * h0 / u0m 
     mu0 = rho * gd * h0 * (l0m / u0m)
     str0 = u0m/l0m
     term0 = rho * gd * h0 ** 2 / l0m
     # group characteristic scales for all different variables
     scale = dict(lx0=lx0, ly0=ly0, u0=u0, v0=v0, h0=h0,
                  lxm=lxm, lym=lym, um=um, vm=vm,
-                 mu0=mu0, str0=str0, term0=term0)
+                 mu0=mu0, str0=str0, term0=term0, c0=c0)
     return scale
 
 
-def predict(func_all, data_all, aniso=False):
+def predict(func_all, data_all, aniso=False, basal=False):
     # obtain the normalized dataset
     x_star, y_star, u_star, v_star, xh_star, yh_star, h_star = data_all[4][2]
     # set the output position based on the original velocity data
@@ -52,7 +53,7 @@ def predict(func_all, data_all, aniso=False):
 
     # extract the function of solution and equation residue
     [f_u, f_gu, gov_eqn] = func_all
-    f_eqn = lambda x: gov_eqn(f_u, x, scale)
+    f_eqn = lambda x: gov_eqn(f_u, x, scale, basal=basal)
 
     # calculate the network output at the original velocity-data positions
     uvhm = f_u(x_pred)
@@ -94,6 +95,8 @@ def predict(func_all, data_all, aniso=False):
     mu_p = dataArrange(uvhm[:, 3:4], idxval, dsize) * varscl['mu0']
     if aniso:
         eta_p = dataArrange(uvhm[:, 4:5], idxval, dsize) * varscl['mu0']
+    if basal:
+        c = dataArrange(uvhm[:, 4:5], idxval, dsize) * varscl['c0']
 
     # convert to 2D derivative of prediction
     ux_p = dataArrange(duvh[:, 0:1], idxval, dsize) * varscl['u0']/varscl['lx0']
@@ -127,5 +130,7 @@ def predict(func_all, data_all, aniso=False):
                "e1": e1, "e2": e2, "scale": varscl}
     if aniso:
         results['eta'] = eta_p
+    if basal:
+        results['c'] = c
 
     return results

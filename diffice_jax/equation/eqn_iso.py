@@ -44,8 +44,7 @@ def vectgrad(func, x):
 
 
 #%% Isotropic shallow-shelf approximation (SSA) equations in the normalized form
-
-def gov_eqn(net, x, scale):
+def gov_eqn(net, x, scale, basal=False, ocean_mask=None):
     """
     :param net: the neural net instance for calculating the informed part
     """
@@ -65,10 +64,16 @@ def gov_eqn(net, x, scale):
     rx0 = lx0 / l0m
     ry0 = ly0 / l0m
 
-    def grad1stOrder(net, x):
+    def grad1stOrder(net, x, basal=basal):
         grad, sol = vectgrad(net, x)
+        # print("DEBUG: sol shape=", jnp.shape(sol))
         h = sol[:, 2:3]
         mu = sol[:, 3:4]
+        if basal:
+            u = sol[:,0:1]
+            v = sol[:,1:2]
+            c = sol[:,4:5]
+        # print("DEBUG: c shape=", jnp.shape(c))
 
         u_x = grad[:, 0:1] * ru0 / rx0
         u_y = grad[:, 1:2] * ru0 / ry0
@@ -78,13 +83,21 @@ def gov_eqn(net, x, scale):
         h_y = grad[:, 5:6] / ry0
         strate = (u_x ** 2 + v_y ** 2 + 0.25 * (u_y + v_x) ** 2 + u_x * v_y) ** 0.5
 
-        term1_1 = 2 * mu * h * (2 * u_x + v_y)
+        term1_1 = 2 * mu * h * (2 * u_x + v_y) 
         term2_1 = 2 * mu * h * (2 * v_y + u_x)
         term12_2 = mu * h * (u_y + v_x)
-        term1_3 = h * h_x
+        term1_3 =h * h_x
+        if basal:
+            term1_4 = c * u
+            term2_4 = c * v
         term2_3 = h * h_y
-        return jnp.hstack([term1_1, term2_1, term12_2, term1_3, term2_3, strate])
 
+        if basal:
+            return jnp.hstack([term1_1, term2_1, term12_2, term1_3, term2_3, strate, term1_4, term2_4])
+        else:
+            return jnp.hstack([term1_1, term2_1, term12_2, term1_3, term2_3, strate])
+
+    # take the second order derivative in SSA 
     func_g = lambda x: grad1stOrder(net, x)
     grad_term, term = vectgrad(func_g, x)
 
@@ -95,12 +108,26 @@ def gov_eqn(net, x, scale):
     e1term3 = term[:, 3:4]
     e2term3 = term[:, 4:5]
     strate = term[:, 5:6]
+    if basal:
+        e1term4 = term[:, 6:7]
+        e2term4 = term[:, 7:8]
 
     e1 = e1term1 + e1term2 - e1term3
     e2 = e2term1 + e2term2 - e2term3
+    # print("DEBUG: e1=", e1)
+    # print("DEBUG: e2=", e2)
+    if basal:
+        e1 -= e1term4 
+        e2 -= e2term4
+    # print("DEBUG: e1=", e1)
+    # print("DEBUG: e2=", e2)
 
     f_eqn = jnp.hstack([e1, e2])
-    val_term = jnp.hstack([e1term1, e1term2, e1term3, e2term1, e2term2, e2term3, strate])
+    # print("DEBUG: f_eqn shape: ", jnp.shape(f_eqn))
+    if basal:
+        val_term = jnp.hstack([e1term1, e1term2, e1term3, e2term1, e2term2, e2term3, strate, e1term4, e2term4])
+    else:
+        val_term = jnp.hstack([e1term1, e1term2, e1term3, e2term1, e2term2, e2term3, strate])
     return f_eqn, val_term
 
 

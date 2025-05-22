@@ -3,10 +3,12 @@ from jax import random
 
 
 # wrapper to create function that can re-sample the dataset and collocation points
-def data_sample_create(data_all, n_pt):
+def data_sample_create(data_all, n_pt,basal=False):
     # load the data within ice shelf
     X_star = data_all[0]
     U_star = data_all[1]
+    if basal:
+        ocean_mask = data_all[5]
     # load the data at the ice front
     X_ct = data_all[2]
     nn_ct = data_all[3]
@@ -24,6 +26,8 @@ def data_sample_create(data_all, n_pt):
         idx_smp = random.choice(keys[0], jnp.arange(n_data), [n_pt[0]])
         X_smp = X_star[0][idx_smp]
         U_smp = U_star[0][idx_smp]
+        if basal:
+            ocean_mask_smp = ocean_mask[idx_smp]
 
         # sampling the thickness data point based on the index
         idxh_smp = random.choice(keys[1], jnp.arange(nh_data), [n_pt[1]])
@@ -34,6 +38,8 @@ def data_sample_create(data_all, n_pt):
         idx_col = random.choice(keys[2], jnp.arange(n_data), [n_pt[2]])
         # sampling the data point based on the index
         X_col = X_star[0][idx_col]
+        if basal:
+            ocean_mask_col = ocean_mask[idx_col]
 
         # generate a random index of the data at ice front
         idx_cbd = random.choice(keys[3], jnp.arange(n_bd), [n_pt[3]])
@@ -42,7 +48,10 @@ def data_sample_create(data_all, n_pt):
         nn_bd = nn_ct[idx_cbd]
 
         # group all the data and collocation points
-        data = dict(smp=[X_smp, U_smp, Xh_smp, H_smp], col=[X_col],  bd=[X_bd, nn_bd])
+        if basal:
+            data = dict(smp=[X_smp, U_smp, Xh_smp, H_smp, ocean_mask_smp], col=[X_col],  bd=[X_bd, nn_bd], ocean_mask=[ocean_mask_col])
+        else:
+            data = dict(smp=[X_smp, U_smp, Xh_smp, H_smp], col=[X_col],  bd=[X_bd, nn_bd])
         return data
     return dataf
 

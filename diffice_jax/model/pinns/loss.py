@@ -49,7 +49,11 @@ def loss_iso_create(predf, eqn_all, scale, lw, basal=False):
 
 
         # calculate the residue of equation
-        f_pred, term = gov_eqn(net, x_col, scale, basal=basal, ocean_mask=data['ocean_mask'][0])
+        if basal:
+            ocean_mask = data['ocean_mask'][0]
+        else:
+            ocean_mask = None
+        f_pred, term = gov_eqn(net, x_col, scale, basal=basal, ocean_mask=ocean_mask)
         # print("DEBUG: f_pred shape:", jnp.shape(f_pred))
         f_bd, term_bd = front_eqn(net, x_bd, nn_bd, scale)
 

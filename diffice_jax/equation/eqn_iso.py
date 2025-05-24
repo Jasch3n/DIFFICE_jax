@@ -130,8 +130,8 @@ def gov_eqn(net, x, scale, basal=False, ocean_mask=None):
     # print("DEBUG: e1=", e1)
     # print("DEBUG: e2=", e2)
     if basal:
-        e1 -= e1term4 
-        e2 -= e2term4
+        e1 += e1term4 
+        e2 += e2term4
     # print("DEBUG: e1=", e1)
     # print("DEBUG: e2=", e2)
 

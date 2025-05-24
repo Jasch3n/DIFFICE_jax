@@ -32,8 +32,7 @@ def normalize_data(data,basal=False):
 
     # extract the ocean mask if specified, in case of basal inversion
     if basal:
-        ocean_mask = data['ocean_mask'].astype(jnp.float32)
-
+        ocean_mask_raw = data['ocean_mask'].astype(jnp.float32)
     #%%
 
     # flatten the velocity data into 1d array
@@ -41,6 +40,8 @@ def normalize_data(data,basal=False):
     y0 = yraw.flatten()
     u0 = uraw.flatten()
     v0 = vraw.flatten()
+    if basal:
+        ocean_mask = jnp.expand_dims(ocean_mask_raw.flatten(), axis=1)
 
     # flatten the thickness data into 1d array
     x0_h = xraw_h.flatten()
@@ -53,6 +54,8 @@ def normalize_data(data,basal=False):
     y = y0[idxval_u, None]
     u = u0[idxval_u, None]
     v = v0[idxval_u, None]
+    if basal:
+        ocean_mask[idxval_u, None]
 
     # remove the nan value in the thickness data
     idxval_h = jnp.where(~np.isnan(h0))[0]

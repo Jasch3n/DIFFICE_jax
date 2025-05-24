@@ -53,7 +53,13 @@ def loss_iso_create(predf, eqn_all, scale, lw, basal=False):
             ocean_mask = data['ocean_mask'][0]
         else:
             ocean_mask = None
-        f_pred, term = gov_eqn(net, x_col, scale, basal=basal, ocean_mask=ocean_mask)
+
+        if basal:
+            f_pred, f_pred_grounded, term = gov_eqn(net, x_col, scale, basal=True)
+            print(jnp.shape(f_pred_grounded))
+            print(jnp.shape(ocean_mask))
+        else:
+            f_pred, term = gov_eqn(net, x_col, scale, basal=False, ocean_mask=None)
         # print("DEBUG: f_pred shape:", jnp.shape(f_pred))
         f_bd, term_bd = front_eqn(net, x_bd, nn_bd, scale)
 
@@ -62,11 +68,15 @@ def loss_iso_create(predf, eqn_all, scale, lw, basal=False):
         data_h_err = ms_error(h_pred - h_smp)
         data_err = jnp.hstack((data_u_err, data_h_err))
         # calculate the mean squared root error of equation
-        eqn_err = ms_error(f_pred)
+        if basal:
+            eqn_err = ms_error(ocean_mask*f_pred + (1-ocean_mask)*f_pred_grounded)
+        else:
+            eqn_err = ms_error(f_pred)
         bd_err = ms_error(f_bd)
         # calculate friction coef for floating ice (constrain basal friction to grounded ice)
         if basal:
             grounded_err = ms_error(ocean_mask_smp * c_pred)
+            # grounded_err = 0
 
         # set the weight for each condition and equation
         data_weight = jnp.array([1., 1., 0.6])

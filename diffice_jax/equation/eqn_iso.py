@@ -68,7 +68,18 @@ def gov_eqn(net, x, scale, basal=False, ocean_mask=None):
     rx0 = lx0 / l0m
     ry0 = ly0 / l0m
 
-    def grad1stOrder(net, x, basal=basal):
+    # [TODO]: Introduce bed implementation, For now, hard code the bed elevation gradient ...
+    # [TODO]: ignore bed topography for now...
+    if basal: 
+        # ocean_mask = lax.stop_gradient(ocean_mask)
+        L_SCALE = 140000
+        # b_y = (l0m/ly0) * (ly0/h0) * (-2 * 500 * (ly0*x[:,1]+ym) / L_SCALE / L_SCALE)
+        # b_y = jnp.expand_dims(b_y, axis=1)
+        b_y=0
+        b_x = 0
+
+    def grad1stOrder(net, x, basal=basal, aux_ocean_mask=ocean_mask):
+        # aux_ocean_mask=lax.stop_gradient(aux_ocean_mask)
         grad, sol = vectgrad(net, x)
         h = sol[:, 2:3] # note that thickness is normalized as h = h_hat * h_m, where h_g has been approximated with h_m
         mu = sol[:, 3:4]
@@ -76,7 +87,6 @@ def gov_eqn(net, x, scale, basal=False, ocean_mask=None):
             u = sol[:,0:1]
             v = sol[:,1:2]
             c = sol[:,4:5]
-        # print("DEBUG: c shape=", jnp.shape(c))
 
         u_x = grad[:, 0:1] * ru0 / rx0
         u_y = grad[:, 1:2] * ru0 / ry0
@@ -86,27 +96,23 @@ def gov_eqn(net, x, scale, basal=False, ocean_mask=None):
         h_y = grad[:, 5:6] / ry0
         strate = (u_x ** 2 + v_y ** 2 + 0.25 * (u_y + v_x) ** 2 + u_x * v_y) ** 0.5
 
-        # [TODO]: Introduce bed implementation, For now, hard code the bed elevation gradient ...
-        # [TODO]: ignore bed topography for now...
-        if False: 
-            L_SCALE = 140000
-            b_y = (b0/h0) * (lx0/b0) * (-1000 * (ly0*x[:,1]+ym) / (L_SCALE**2))
-            b_x = 0
-
         term1_1 = 2 * mu * h * (2 * u_x + v_y) 
         term2_1 = 2 * mu * h * (2 * v_y + u_x)
         term12_2 = mu * h * (u_y + v_x)
+        term1_3 = h * h_x
+        term2_3 = h * h_y
         if basal:
-            term1_4 = c * (u0/u0m) * (u + um/u0) * (1 - ocean_mask)
-            term2_4 = c * (v0/u0m) * (v + vm/v0) * (1 - ocean_mask)
-            term1_3 = h * h_x - ocean_mask*rho/rho_w*h*h_x
-            term2_3 = h * h_y - ocean_mask*rho/rho_w*h*h_y
-        else:
-            term1_3 = h * h_x
-            term2_3 = h * h_y
+            term1_4 = c * (u0/u0m) * (u + um/u0) # * (1 - aux_ocean_mask)
+            term2_4 = c * (v0/u0m) * (v + vm/v0) # * (1 - aux_ocean_mask)
+            # print(jnp.mean(aux_ocean_mask).astype(float))
+            # term1_4 = (1 - aux_ocean_mask)
+            # term2_4 = (1 - aux_ocean_mask)
+            # print(jnp.shape(term1_4))
+            term1_3_grounded = term1_3 + rho/rho_w*h*h_x + h*b_x
+            term2_3_grounded = term2_3 + rho/rho_w*h*h_y + h*b_y
 
         if basal:
-            return jnp.hstack([term1_1, term2_1, term12_2, term1_3, term2_3, strate, term1_4, term2_4])
+            return jnp.hstack([term1_1, term2_1, term12_2, term1_3, term2_3, strate, term1_4, term2_4, term1_3_grounded, term2_3_grounded])
         else:
             return jnp.hstack([term1_1, term2_1, term12_2, term1_3, term2_3, strate])
 
@@ -124,24 +130,29 @@ def gov_eqn(net, x, scale, basal=False, ocean_mask=None):
     if basal:
         e1term4 = term[:, 6:7]
         e2term4 = term[:, 7:8]
+        e1term3_grounded = term[:,8:9]
+        e2term3_grounded = term[:,9:10]
 
     e1 = e1term1 + e1term2 - e1term3
     e2 = e2term1 + e2term2 - e2term3
     # print("DEBUG: e1=", e1)
     # print("DEBUG: e2=", e2)
     if basal:
-        e1 += e1term4 
-        e2 += e2term4
+        e1_grounded = e1term1 + e1term2 - e1term3_grounded + e1term4 
+        e2_grounded = e2term1 + e2term2 - e2term3_grounded + e2term4
     # print("DEBUG: e1=", e1)
     # print("DEBUG: e2=", e2)
 
     f_eqn = jnp.hstack([e1, e2])
     # print("DEBUG: f_eqn shape: ", jnp.shape(f_eqn))
     if basal:
-        val_term = jnp.hstack([e1term1, e1term2, e1term3, e2term1, e2term2, e2term3, strate, e1term4, e2term4])
+        f_eqn_grounded = jnp.hstack([e1_grounded, e2_grounded])
+    if basal:
+        val_term = jnp.hstack([e1term1, e1term2, e1term3, e2term1, e2term2, e2term3, strate, e1term4, e2term4, e1term3_grounded, e2term3_grounded])
+        return f_eqn, f_eqn_grounded, val_term
     else:
         val_term = jnp.hstack([e1term1, e1term2, e1term3, e2term1, e2term2, e2term3, strate])
-    return f_eqn, val_term
+        return f_eqn, val_term
 
 
 #%% Isotorpic dynamic boundary condition at calving front in the normalized form

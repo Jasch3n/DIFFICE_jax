@@ -10,11 +10,12 @@ def dataArrange(var, idxval, dsize):
     var_2d = jnp.reshape(var_1d, dsize)
     return var_2d
 
-def extract_scale(scale_info):
+def extract_scale(scale_info, basal=False):
     # define the global parameter
     rho = 917
     rho_w = 1030
-    gd = 9.8 * (1 - rho / rho_w)  # gravitational acceleration
+    g = 9.8
+    gd = g * (1 - rho / rho_w)  # gravitational acceleration
     # load the scale information
     dmean, drange = scale_info
     lx0, ly0, u0, v0 = drange[0:4]
@@ -24,8 +25,12 @@ def extract_scale(scale_info):
     u0m = lax.max(u0, v0)
     l0m = lax.max(lx0, ly0)
     # calculate the scale of viscosity and strain rate
-    c0 = rho * gd * h0 / u0m 
-    mu0 = rho * gd * h0 * (l0m / u0m)
+    if basal:
+        mu0 = rho * g * h0 * (l0m / u0m)
+        c0 = h0 * mu0 / (l0m ** 2)
+    else:
+        mu0 = rho * gd * h0 * (l0m / u0m)
+        c0 = jnp.nan
     str0 = u0m/l0m
     term0 = rho * gd * h0 ** 2 / l0m
     # group characteristic scales for all different variables
@@ -49,11 +54,15 @@ def predict(func_all, data_all, aniso=False, basal=False):
     dsize, dsize_h = data_all[4][-1]
     # extract the scale for different variables
     scale = data_all[4][0:2]
-    varscl = extract_scale(scale)
+    varscl = extract_scale(scale, basal=basal)
 
     # extract the function of solution and equation residue
     [f_u, f_gu, gov_eqn] = func_all
-    f_eqn = lambda x: gov_eqn(f_u, x, scale, basal=basal)
+    if basal:
+        ocean_mask = data_all[-1][0]
+    else:
+        ocean_mask = None
+    f_eqn = lambda x: gov_eqn(f_u, x, scale, basal=basal, ocean_mask=ocean_mask)
 
     # calculate the network output at the original velocity-data positions
     uvhm = f_u(x_pred)

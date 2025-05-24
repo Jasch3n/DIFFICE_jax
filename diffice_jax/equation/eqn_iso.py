@@ -51,10 +51,14 @@ def gov_eqn(net, x, scale, basal=False, ocean_mask=None):
     # setting the global parameters
     rho = 917
     rho_w = 1030
-    gd = 9.8*(1-rho/rho_w)  # gravitational acceleration
+    g = 9.8
+    gd = g*(1-rho/rho_w)  # gravitational acceleration
 
     dmean, drange = scale[0:2]
     lx0, ly0, u0, v0 = drange[0:4]
+    ym = dmean[1]
+    um = dmean[2]
+    vm = dmean[3]
     h0 = dmean[4]
 
     u0m = lax.max(u0, v0)
@@ -66,8 +70,7 @@ def gov_eqn(net, x, scale, basal=False, ocean_mask=None):
 
     def grad1stOrder(net, x, basal=basal):
         grad, sol = vectgrad(net, x)
-        # print("DEBUG: sol shape=", jnp.shape(sol))
-        h = sol[:, 2:3]
+        h = sol[:, 2:3] # note that thickness is normalized as h = h_hat * h_m, where h_g has been approximated with h_m
         mu = sol[:, 3:4]
         if basal:
             u = sol[:,0:1]
@@ -83,14 +86,24 @@ def gov_eqn(net, x, scale, basal=False, ocean_mask=None):
         h_y = grad[:, 5:6] / ry0
         strate = (u_x ** 2 + v_y ** 2 + 0.25 * (u_y + v_x) ** 2 + u_x * v_y) ** 0.5
 
+        # [TODO]: Introduce bed implementation, For now, hard code the bed elevation gradient ...
+        # [TODO]: ignore bed topography for now...
+        if False: 
+            L_SCALE = 140000
+            b_y = (b0/h0) * (lx0/b0) * (-1000 * (ly0*x[:,1]+ym) / (L_SCALE**2))
+            b_x = 0
+
         term1_1 = 2 * mu * h * (2 * u_x + v_y) 
         term2_1 = 2 * mu * h * (2 * v_y + u_x)
         term12_2 = mu * h * (u_y + v_x)
-        term1_3 =h * h_x
         if basal:
-            term1_4 = c * u
-            term2_4 = c * v
-        term2_3 = h * h_y
+            term1_4 = c * (u0/u0m) * (u + um/u0) * (1 - ocean_mask)
+            term2_4 = c * (v0/u0m) * (v + vm/v0) * (1 - ocean_mask)
+            term1_3 = h * h_x - ocean_mask*rho/rho_w*h*h_x
+            term2_3 = h * h_y - ocean_mask*rho/rho_w*h*h_y
+        else:
+            term1_3 = h * h_x
+            term2_3 = h * h_y
 
         if basal:
             return jnp.hstack([term1_1, term2_1, term12_2, term1_3, term2_3, strate, term1_4, term2_4])

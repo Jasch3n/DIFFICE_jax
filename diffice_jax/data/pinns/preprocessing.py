@@ -32,7 +32,7 @@ def normalize_data(data,basal=False):
 
     # extract the ocean mask if specified, in case of basal inversion
     if basal:
-        ocean_mask = data['ocean_mask']
+        ocean_mask = data['ocean_mask'].astype(jnp.float32)
 
     #%%
 

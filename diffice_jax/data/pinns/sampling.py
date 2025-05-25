@@ -40,6 +40,7 @@ def data_sample_create(data_all, n_pt,basal=False):
         X_col = X_star[0][idx_col]
         if basal:
             ocean_mask_col = ocean_mask[idx_col]
+        
 
         # generate a random index of the data at ice front
         idx_cbd = random.choice(keys[3], jnp.arange(n_bd), [n_pt[3]])
@@ -49,7 +50,7 @@ def data_sample_create(data_all, n_pt,basal=False):
 
         # group all the data and collocation points
         if basal:
-            data = dict(smp=[X_smp, U_smp, Xh_smp, H_smp, ocean_mask_smp], col=[X_col],  bd=[X_bd, nn_bd], ocean_mask=[ocean_mask_col])
+            data = dict(smp=[X_smp, U_smp, Xh_smp, H_smp, ocean_mask_smp], col=[X_col, ocean_mask_col],  bd=[X_bd, nn_bd], ocean_mask=[X_star[0], ocean_mask])
         else:
             data = dict(smp=[X_smp, U_smp, Xh_smp, H_smp], col=[X_col],  bd=[X_bd, nn_bd])
         return data

@@ -40,19 +40,22 @@ def loss_iso_create(predf, eqn_all, scale, lw, basal=False):
         x_bd = data['bd'][0]
         nn_bd = data['bd'][1]
 
+        # whole-domain coordinates for the grounded friction constraint
+        x_pred = data['ocean_mask'][0]
+
         # calculate the gradient of phi at origin
         u_pred = net(x_smp)[:, 0:2]
         h_pred = net(xh_smp)[:, 2:3]
         if is_basal: 
-            c_pred = net(x_col)[:,4:5]
-            ocean_mask = data['ocean_mask'][0]
+            c_pred = net(x_pred)[:,4:5]
+            ocean_mask_whole = data['ocean_mask'][1]
         # print("DEBUG: u_pred shape:", jnp.shape(u_pred))
         # print("DEBUG: h_pred shape:", jnp.shape(h_pred))
 
 
         # calculate the residue of equation
         if is_basal:
-            ocean_mask = data['ocean_mask'][0]
+            ocean_mask_col = data['col'][1]
         else:
             ocean_mask = None
 
@@ -88,13 +91,13 @@ def loss_iso_create(predf, eqn_all, scale, lw, basal=False):
         data_err = jnp.hstack((data_u_err, data_h_err))
         # calculate the mean squared root error of equation
         if is_basal:
-            eqn_err = ms_error(ocean_mask*f_pred + (1-ocean_mask)*f_pred_grounded)
+            eqn_err = ms_error(ocean_mask_col*f_pred + (1-ocean_mask_col)*f_pred_grounded)
         else:
             eqn_err = ms_error(f_pred)
         bd_err = ms_error(f_bd)
         # calculate friction coef for floating ice (constrain basal friction to grounded ice)
         if is_basal:
-            grounded_err = ms_error(ocean_mask * c_pred)
+            grounded_err = ms_error(ocean_mask_whole * c_pred)
             # grounded_err = 0
 
         # set the weight for each condition and equation
@@ -109,8 +112,8 @@ def loss_iso_create(predf, eqn_all, scale, lw, basal=False):
         loss_eqn = jnp.sum(eqn_err * eqn_weight)
         loss_bd = jnp.sum(bd_err * bd_weight)
         if is_basal:
-            # loss_grounded = jnp.sum(grounded_err * grounded_weight)
-            loss_grounded = 0.
+            loss_grounded = jnp.sum(grounded_err * grounded_weight)
+            # loss_grounded = 0.
 
         # load the loss_ref
         loss_ref = loss_fun.lref

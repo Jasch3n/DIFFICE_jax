@@ -3,7 +3,7 @@
 """
 
 import jax.numpy as jnp
-from jax import vjp, vmap, lax
+from jax import vjp, vmap, lax, debug
 
 # generate matrix required for vjp for vector gradient
 def vgmat(x, n_out, idx=None):
@@ -108,8 +108,8 @@ def gov_eqn(net, x, scale, basal=False):
             # term1_4 = (1 - aux_ocean_mask)
             # term2_4 = (1 - aux_ocean_mask)
             # print(jnp.shape(term1_4))
-            term1_4 = c * (u0/u0m) * (u + um/u0)
-            term2_4 = c * (v0/u0m) * (v + vm/v0)
+            term1_4 = -c * (rho_w / (rho_w - rho)) * (u0/u0m) * u #(u + um/u0)
+            term2_4 = -c * (rho_w / (rho_w - rho)) * (v0/u0m) * v #(v + vm/v0)
             term1_3_grounded = (rho_w / (rho_w-rho)) * (term1_3 + h*b_x/rx0)
             term2_3_grounded = (rho_w / (rho_w-rho)) * (term2_3 + h*b_y/ry0)
 

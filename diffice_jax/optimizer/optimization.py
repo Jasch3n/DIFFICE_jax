@@ -75,7 +75,10 @@ def adam_optimizer(key, lossf, params, dataf, epoch, lr=1e-3, aniso=False, schdu
                 lossf.wsp = wsp0 * schdul(step+1)
 
         # saving the loss
-        loss_all.append(loss_info[0:4])
+        if basal:
+            loss_all.append(loss_info[0:5])
+        else:
+            loss_all.append(loss_info[0:4])
 
     # obtain the total loss in the last iterations
     lossend = jnp.array(loss_all[-nc:])[:, 0]

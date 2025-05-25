@@ -27,7 +27,7 @@ def extract_scale(scale_info, basal=False):
     # calculate the scale of viscosity and strain rate
     mu0 = rho * gd * h0 * (l0m / u0m)
     if basal:
-        c0 = (h0 * mu0) / (l0m**2) * (1 - rho/rho_w)
+        c0 = (h0 * mu0) / (l0m**2)
     else:
         c0 = jnp.nan
     str0 = u0m/l0m
@@ -142,6 +142,8 @@ def predict(func_all, data_all, aniso=False, basal=False):
     if basal:
         e14 = dataArrange(term[:, 7:8], idxval, dsize) * varscl['term0']
         e24 = dataArrange(term[:, 8:9], idxval, dsize) * varscl['term0']
+        e14 = (1 - ocean_mask) * e14 
+        e24 = (1 - ocean_mask) * e24
         e13_grounded = dataArrange(term[:, 9:10], idxval, dsize) * varscl['term0']
         e23_grounded = dataArrange(term[:, 10:11], idxval, dsize) * varscl['term0']
         e13 = ocean_mask*e13 + (1-ocean_mask)*e13_grounded 

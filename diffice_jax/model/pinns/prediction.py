@@ -27,7 +27,7 @@ def extract_scale(scale_info, basal=False):
     # calculate the scale of viscosity and strain rate
     mu0 = rho * gd * h0 * (l0m / u0m)
     if basal:
-        c0 = (rho * g * h0 * h0) / (u0 * um * l0m) * (1 - rho/rho_w)
+        c0 = (h0 * mu0) / (l0m**2) * (1 - rho/rho_w)
     else:
         c0 = jnp.nan
     str0 = u0m/l0m
@@ -37,7 +37,6 @@ def extract_scale(scale_info, basal=False):
                  lxm=lxm, lym=lym, um=um, vm=vm,
                  mu0=mu0, str0=str0, term0=term0, c0=c0)
     return scale
-
 
 def predict(func_all, data_all, aniso=False, basal=False):
     # obtain the normalized dataset

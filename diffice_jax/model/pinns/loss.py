@@ -109,7 +109,8 @@ def loss_iso_create(predf, eqn_all, scale, lw, basal=False):
         loss_eqn = jnp.sum(eqn_err * eqn_weight)
         loss_bd = jnp.sum(bd_err * bd_weight)
         if is_basal:
-            loss_grounded = jnp.sum(grounded_err * grounded_weight)
+            # loss_grounded = jnp.sum(grounded_err * grounded_weight)
+            loss_grounded = 0.
 
         # load the loss_ref
         loss_ref = loss_fun.lref

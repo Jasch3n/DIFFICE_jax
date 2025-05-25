@@ -15,14 +15,14 @@ def loss_iso_create(predf, eqn_all, scale, lw, basal=False):
     :return: a loss function (callable)
     '''
     is_basal = basal
-    print("loss_iso_create thinks is_basal is", is_basal)
+    # print("loss_iso_create thinks is_basal is", is_basal)
     # separate the governing equation and boundary conditions
     gov_eqn, front_eqn = eqn_all
     # print("DEBUG: loss_iso_create thinks basal is", basal)
 
     # loss function used for the PINN training
     def loss_fun(params, data):
-        print("loss_fun thinks is_basal is", is_basal)
+        # print("loss_fun thinks is_basal is", is_basal)
         # print("DEBUG: loss_fun thinks basal is", basal)
         # print("DEBUG: params length:", len(params))
         # create the function for gradient calculation involves input Z only
@@ -58,25 +58,25 @@ def loss_iso_create(predf, eqn_all, scale, lw, basal=False):
 
         if is_basal:
             f_pred, f_pred_grounded, term = gov_eqn(net, x_col, scale, basal=is_basal)
-            e1term1 = term[:,0:1]
-            e2term1 = term[:,1:2]
-            e12term2 = term[:,2:3]
-            e1term3 = term[:,3:4]
-            e2term3 = term[:,4:5]
-            e1term4 = term[:,6:7]
-            e2term4 = term[:,7:8]
-            e1term3_grounded = term[:,8:9]
-            e2term3_grounded = term[:,9:10]
-            jax.debug.print("--------------------------")
-            jax.debug.print("")
-            jax.debug.print("viscous terms | xx={:.6f}, yy={:.6f}, xy={:.6f}",
-                            ms_error(e1term1)[0], ms_error(e2term1)[0], ms_error(e12term2)[0])
-            jax.debug.print("basal traction terms | x={:.6f}, y={:.6f}",
-                            ms_error(e1term4)[0], ms_error(e2term4)[0])
-            jax.debug.print("grav drive terms | xdir={:.6f}, ydir={:.6f}",
-                            ms_error(e1term3_grounded)[0], ms_error(e2term3_grounded)[0])
-            jax.debug.print("eq residue | xdir={:.6f}, ydir={:.6f}",
-                            ms_error(f_pred_grounded[:,0:1])[0], ms_error(f_pred_grounded[:,0:1])[0])
+            # e1term1 = term[:,0:1]
+            # e2term1 = term[:,1:2]
+            # e12term2 = term[:,2:3]
+            # e1term3 = term[:,3:4]
+            # e2term3 = term[:,4:5]
+            # e1term4 = term[:,6:7]
+            # e2term4 = term[:,7:8]
+            # e1term3_grounded = term[:,8:9]
+            # e2term3_grounded = term[:,9:10]
+            # jax.debug.print("--------------------------")
+            # jax.debug.print("")
+            # jax.debug.print("viscous terms | xx={:.6f}, yy={:.6f}, xy={:.6f}",
+            #                 ms_error(e1term1)[0], ms_error(e2term1)[0], ms_error(e12term2)[0])
+            # jax.debug.print("basal traction terms | x={:.6f}, y={:.6f}",
+            #                 ms_error(e1term4)[0], ms_error(e2term4)[0])
+            # jax.debug.print("grav drive terms | xdir={:.6f}, ydir={:.6f}",
+            #                 ms_error(e1term3_grounded)[0], ms_error(e2term3_grounded)[0])
+            # jax.debug.print("eq residue | xdir={:.6f}, ydir={:.6f}",
+            #                 ms_error(f_pred_grounded[:,0:1])[0], ms_error(f_pred_grounded[:,0:1])[0])
         else:
             f_pred, term = gov_eqn(net, x_col, scale, basal=is_basal)
         # print("DEBUG: f_pred shape:", jnp.shape(f_pred))

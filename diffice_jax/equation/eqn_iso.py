@@ -87,8 +87,6 @@ def gov_eqn(net, x, scale, basal=False):
             u = sol[:,0:1]
             v = sol[:,1:2]
             c = sol[:,4:5]
-            c_factor = (u0*um*l0m) / (h0*rho*g*h0) * (rho_w / (rho_w - rho))
-
         u_x = grad[:, 0:1] * ru0 / rx0
         u_y = grad[:, 1:2] * ru0 / ry0
         v_x = grad[:, 2:3] * rv0 / rx0

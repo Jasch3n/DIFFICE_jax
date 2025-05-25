@@ -42,8 +42,8 @@ def loss_iso_create(predf, eqn_all, scale, lw, basal=False):
         u_pred = net(x_smp)[:, 0:2]
         h_pred = net(xh_smp)[:, 2:3]
         if basal: 
-            c_pred = net(x_smp)[:,4:5]
-            ocean_mask_smp = data['smp'][4]
+            c_pred = net(x_col)[:,4:5]
+            ocean_mask = data['ocean_mask'][0]
         # print("DEBUG: u_pred shape:", jnp.shape(u_pred))
         # print("DEBUG: h_pred shape:", jnp.shape(h_pred))
 
@@ -56,8 +56,6 @@ def loss_iso_create(predf, eqn_all, scale, lw, basal=False):
 
         if basal:
             f_pred, f_pred_grounded, term = gov_eqn(net, x_col, scale, basal=True)
-            print(jnp.shape(f_pred_grounded))
-            print(jnp.shape(ocean_mask))
         else:
             f_pred, term = gov_eqn(net, x_col, scale, basal=False, ocean_mask=None)
         # print("DEBUG: f_pred shape:", jnp.shape(f_pred))
@@ -75,7 +73,7 @@ def loss_iso_create(predf, eqn_all, scale, lw, basal=False):
         bd_err = ms_error(f_bd)
         # calculate friction coef for floating ice (constrain basal friction to grounded ice)
         if basal:
-            grounded_err = ms_error(ocean_mask_smp * c_pred)
+            grounded_err = ms_error(ocean_mask * c_pred)
             # grounded_err = 0
 
         # set the weight for each condition and equation

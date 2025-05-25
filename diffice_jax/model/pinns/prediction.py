@@ -74,7 +74,6 @@ def predict(func_all, data_all, aniso=False, basal=False):
     nsp = 4
     # separate input into different partition to avoid GPU memory limit
     x_psp = jnp.array_split(x_pred, nsp)
-    ocean_mask_psp = jnp.array_split(ocean_mask, nsp)
     idxsp = jnp.arange(nsp).tolist()
     # calculate the derivative of network output at the velocity-data positions
     du_list = tree_map(lambda x: f_gu(x_psp[x]), idxsp)

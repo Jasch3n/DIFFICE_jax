@@ -25,11 +25,10 @@ def extract_scale(scale_info, basal=False):
     u0m = lax.max(u0, v0)
     l0m = lax.max(lx0, ly0)
     # calculate the scale of viscosity and strain rate
+    mu0 = rho * gd * h0 * (l0m / u0m)
     if basal:
-        mu0 = rho * g * h0 * (l0m / u0m)
-        c0 = h0 * mu0 / (l0m ** 2)
+        c0 = (rho * g * h0 * h0) / (u0 * um * l0m) * (1 - rho/rho_w)
     else:
-        mu0 = rho * gd * h0 * (l0m / u0m)
         c0 = jnp.nan
     str0 = u0m/l0m
     term0 = rho * gd * h0 ** 2 / l0m
@@ -148,7 +147,7 @@ def predict(func_all, data_all, aniso=False, basal=False):
         e23_grounded = dataArrange(term[:, 10:11], idxval, dsize) * varscl['term0']
         e13 = ocean_mask*e13 + (1-ocean_mask)*e13_grounded 
         e23 = ocean_mask*e23 + (1-ocean_mask)*e23_grounded 
-    strate = dataArrange(term[:, -1:], idxval, dsize) * varscl['str0']
+    strate = dataArrange(term[:, 6:7], idxval, dsize) * varscl['str0']
 
     # group all the variables
     results = {"x": x, "y": y, "u_g": u_data, "v_g": v_data,

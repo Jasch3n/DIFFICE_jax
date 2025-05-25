@@ -44,7 +44,7 @@ def vectgrad(func, x):
 
 
 #%% Isotropic shallow-shelf approximation (SSA) equations in the normalized form
-def gov_eqn(net, x, scale, basal=False, ocean_mask=None):
+def gov_eqn(net, x, scale, basal=False):
     """
     :param net: the neural net instance for calculating the informed part
     """
@@ -78,7 +78,7 @@ def gov_eqn(net, x, scale, basal=False, ocean_mask=None):
         b_y=0
         b_x = 0
 
-    def grad1stOrder(net, x, basal=basal, aux_ocean_mask=ocean_mask):
+    def grad1stOrder(net, x, basal=basal):
         # aux_ocean_mask=lax.stop_gradient(aux_ocean_mask)
         grad, sol = vectgrad(net, x)
         h = sol[:, 2:3] # note that thickness is normalized as h = h_hat * h_m, where h_g has been approximated with h_m
@@ -87,6 +87,7 @@ def gov_eqn(net, x, scale, basal=False, ocean_mask=None):
             u = sol[:,0:1]
             v = sol[:,1:2]
             c = sol[:,4:5]
+            c_factor = (u0*um*l0m) / (h0*rho*g*h0) * (rho_w / (rho_w - rho))
 
         u_x = grad[:, 0:1] * ru0 / rx0
         u_y = grad[:, 1:2] * ru0 / ry0
@@ -102,14 +103,17 @@ def gov_eqn(net, x, scale, basal=False, ocean_mask=None):
         term1_3 = h * h_x
         term2_3 = h * h_y
         if basal:
-            term1_4 = c * (u0/u0m) * (u + um/u0) # * (1 - aux_ocean_mask)
-            term2_4 = c * (v0/u0m) * (v + vm/v0) # * (1 - aux_ocean_mask)
-            # print(jnp.mean(aux_ocean_mask).astype(float))
+            # term1_4 = c * (u0/u0m) * (u + um/u0) # * (1 - aux_ocean_mask)
+            # term2_4 = c * (v0/u0m) * (v + vm/v0) # * (1 - aux_ocean_mask)
+            # print("Traction terms:", jnp.mean(term1_4).astype(float), jnp.mean(term2_4).astype(float))
+            # print("Viscous terms:", jnp.mean(term1_1).astype(float), jnp.mean(term12_2).astype(float), jnp.mean(term2_1).astype(float))
             # term1_4 = (1 - aux_ocean_mask)
             # term2_4 = (1 - aux_ocean_mask)
             # print(jnp.shape(term1_4))
-            term1_3_grounded = term1_3 + rho/rho_w*h*h_x + h*b_x
-            term2_3_grounded = term2_3 + rho/rho_w*h*h_y + h*b_y
+            term1_4 = c * ((u0/um)*u + 1)
+            term2_4 = c * ((v0/vm)*v + 1)
+            term1_3_grounded = (rho_w / (rho_w-rho)) * (term1_3 + h*b_x/rx0)
+            term2_3_grounded = (rho_w / (rho_w-rho)) * (term2_3 + h*b_y/ry0)
 
         if basal:
             return jnp.hstack([term1_1, term2_1, term12_2, term1_3, term2_3, strate, term1_4, term2_4, term1_3_grounded, term2_3_grounded])

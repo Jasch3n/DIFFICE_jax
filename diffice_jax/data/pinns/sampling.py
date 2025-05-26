@@ -33,6 +33,8 @@ def data_sample_create(data_all, n_pt,basal=False):
         idxh_smp = random.choice(keys[1], jnp.arange(nh_data), [n_pt[1]])
         Xh_smp = X_star[1][idxh_smp]
         H_smp = U_star[1][idxh_smp]
+        if basal:
+            S_smp = U_star[2][idxh_smp]
 
         # generate a random sample of collocation point within the domain
         idx_col = random.choice(keys[2], jnp.arange(n_data), [n_pt[2]])
@@ -41,7 +43,6 @@ def data_sample_create(data_all, n_pt,basal=False):
         if basal:
             ocean_mask_col = ocean_mask[idx_col]
         
-
         # generate a random index of the data at ice front
         idx_cbd = random.choice(keys[3], jnp.arange(n_bd), [n_pt[3]])
         # sampling the data point based on the index
@@ -50,8 +51,8 @@ def data_sample_create(data_all, n_pt,basal=False):
 
         # group all the data and collocation points
         if basal:
-            data = dict(smp=[X_smp, U_smp, Xh_smp, H_smp, ocean_mask_smp], col=[X_col, ocean_mask_col],  bd=[X_bd, nn_bd], ocean_mask=[X_star[0], ocean_mask])
-        else:
+            data = dict(smp=[X_smp, U_smp, Xh_smp, H_smp, S_smp], col=[X_col, ocean_mask_col],  bd=[X_bd, nn_bd], ocean_mask=[X_star[0], ocean_mask])
+        else: 
             data = dict(smp=[X_smp, U_smp, Xh_smp, H_smp], col=[X_col],  bd=[X_bd, nn_bd])
         return data
     return dataf

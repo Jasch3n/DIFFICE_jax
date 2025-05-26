@@ -31,8 +31,8 @@ def init_nets(parent_key, n_hl, n_unit, aniso=False, basal=False):
     elif basal:
         n_basal=1
 
-    # set the neural network shape for u, v, h
-    layers1 = [2] + n_hl * [n_unit] + [3]
+    # set the neural network shape for u, v, h, and s
+    layers1 = [2] + n_hl * [n_unit] + [4 if basal else 3]
     # set the neural network shape for mu
     layers2 = [2] + n_hl * [n_unit] + [n_mu]
     # if inferring for basal friction, add another layer for C

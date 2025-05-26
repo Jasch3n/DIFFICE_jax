@@ -34,6 +34,8 @@ def loss_iso_create(predf, eqn_all, scale, lw, basal=False):
         # load the thickness data and their position
         xh_smp = data['smp'][2]
         h_smp = data['smp'][3]
+        if basal:
+            s_smp = data['smp'][4]
 
         # load the position and weight of collocation points
         x_col = data['col'][0]
@@ -47,17 +49,17 @@ def loss_iso_create(predf, eqn_all, scale, lw, basal=False):
         u_pred = net(x_smp)[:, 0:2]
         h_pred = net(xh_smp)[:, 2:3]
         if is_basal: 
-            c_pred = net(x_pred)[:,4:5]
+            s_pred = net(xh_smp)[:, 3:4]
+            c_pred = net(x_pred)[:,5:6]
             ocean_mask_whole = data['ocean_mask'][1]
         # print("DEBUG: u_pred shape:", jnp.shape(u_pred))
         # print("DEBUG: h_pred shape:", jnp.shape(h_pred))
-
 
         # calculate the residue of equation
         if is_basal:
             ocean_mask_col = data['col'][1]
         else:
-            ocean_mask = None
+            ocean_mask_col = None
 
         if is_basal:
             f_pred, f_pred_grounded, term = gov_eqn(net, x_col, scale, basal=is_basal)
@@ -88,20 +90,33 @@ def loss_iso_create(predf, eqn_all, scale, lw, basal=False):
         # calculate the mean squared root error of normalization cond.
         data_u_err = ms_error(u_pred - u_smp)
         data_h_err = ms_error(h_pred - h_smp)
-        data_err = jnp.hstack((data_u_err, data_h_err))
+        if basal:
+            data_s_err = ms_error(s_pred - s_smp)
+
+        if basal:
+            data_err = jnp.hstack((data_u_err, data_h_err, data_s_err))
+        else:
+            data_err = jnp.hstack((data_u_err, data_h_err))
+
         # calculate the mean squared root error of equation
         if is_basal:
             eqn_err = ms_error(ocean_mask_col*f_pred + (1-ocean_mask_col)*f_pred_grounded)
         else:
             eqn_err = ms_error(f_pred)
+        
+        # calculate the mean squared root error of boundary condition (calving front)
         bd_err = ms_error(f_bd)
-        # calculate friction coef for floating ice (constrain basal friction to grounded ice)
+
+        # constrain basal friction to grounded ice 
         if is_basal:
             grounded_err = ms_error(ocean_mask_whole * c_pred)
             # grounded_err = 0
 
         # set the weight for each condition and equation
-        data_weight = jnp.array([1., 1., 0.6])
+        if basal:
+            data_weight = jnp.array([1., 1., 0.6, 0.6])
+        else:
+            data_weight = jnp.array([1., 1., 0.6])
         eqn_weight = jnp.array([1., 1.])
         bd_weight = jnp.array([1., 1.])
         if is_basal:

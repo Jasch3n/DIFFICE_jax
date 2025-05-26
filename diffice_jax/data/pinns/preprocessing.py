@@ -33,6 +33,7 @@ def normalize_data(data,basal=False):
     # extract the ocean mask if specified, in case of basal inversion
     if basal:
         ocean_mask_raw = data['ocean_mask'].astype(jnp.float32)
+        sraw = data['sd']
     #%%
 
     # flatten the velocity data into 1d array
@@ -47,6 +48,8 @@ def normalize_data(data,basal=False):
     x0_h = xraw_h.flatten()
     y0_h = yraw_h.flatten()
     h0 = hraw.flatten()
+    if basal: 
+        s0 = sraw.flatten()
 
     # remove the nan value in the velocity data
     idxval_u = jnp.where(~np.isnan(u0))[0]
@@ -62,6 +65,8 @@ def normalize_data(data,basal=False):
     x_h = x0_h[idxval_h, None]
     y_h = y0_h[idxval_h, None]
     h = h0[idxval_h, None]
+    if basal:
+        s = s0[idxval_h, None]
 
     #%%
     # calculate the mean and range of the domain
@@ -80,6 +85,10 @@ def normalize_data(data,basal=False):
     h_mean = jnp.mean(h)
     h_range = jnp.std(h) * 2
 
+    if basal:
+        s_mean = jnp.mean(s)
+        s_range = jnp.std(s) * 2
+
     # normalize the velocity data
     x_n = (x - x_mean) / x_range
     y_n = (y - y_mean) / y_range
@@ -90,6 +99,8 @@ def normalize_data(data,basal=False):
     xh_n = (x_h - x_mean) / x_range
     yh_n = (y_h - y_mean) / y_range
     h_n = (h) / h_mean
+    if basal:
+        s_n = (s) / h_mean # choose thickness as scale for surface elevation
 
     # normalize the calving front position
     xct_n = (xct - x_mean) / x_range
@@ -97,16 +108,27 @@ def normalize_data(data,basal=False):
 
     # group the raw data
     data_raw = [x0, y0, u0, v0, x0_h, y0_h, h0]
+    if basal:
+        data_raw.append(s0)
     # group the normalized data
     data_norm = [x_n, y_n, u_n, v_n, xh_n, yh_n, h_n]
+    if basal:
+        data_norm.append(s_n)
     # group the nan info of original data
     idxval_all = [idxval_u, idxval_h]
     # group the shape info of original data
     dsize_all = [uraw.shape, hraw.shape]
 
     # group the mean and range info for each variable (shape = (5,))
-    data_mean = jnp.hstack([x_mean, y_mean, u_mean, v_mean, h_mean])
-    data_range = jnp.hstack([x_range, y_range, u_range, v_range, h_range])
+    data_mean=[x_mean, y_mean, u_mean, v_mean, h_mean]
+    if basal:
+        data_mean.append(s_mean)
+    data_mean = jnp.hstack(data_mean)
+
+    data_range=[x_range, y_range, u_range, v_range, h_range]
+    if basal:
+        data_range.append(s_range)
+    data_range = jnp.hstack(data_range)
 
     # gathering all the data information
     data_info = [data_mean, data_range, data_norm, data_raw, idxval_all, dsize_all]
@@ -118,6 +140,8 @@ def normalize_data(data,basal=False):
     X_ct = jnp.hstack((xct_n, yct_n))
     # sequence of output matrix column is u,v,h
     U_star = [jnp.hstack((u_n, v_n)), h_n]
+    if basal:
+        U_star.append(s_n)
 
     if basal:
         return X_star, U_star, X_ct, nnct, data_info, ocean_mask

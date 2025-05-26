@@ -40,7 +40,10 @@ def extract_scale(scale_info, basal=False):
 
 def predict(func_all, data_all, aniso=False, basal=False):
     # obtain the normalized dataset
-    x_star, y_star, u_star, v_star, xh_star, yh_star, h_star = data_all[4][2]
+    if basal:
+        x_star, y_star, u_star, v_star, xh_star, yh_star, h_star, s_star = data_all[4][2]
+    else:
+        x_star, y_star, u_star, v_star, xh_star, yh_star, h_star = data_all[4][2]
     # set the output position based on the original velocity data
     x_pred = jnp.hstack([x_star, y_star])
     # set the output position based on the original thickness data
@@ -67,6 +70,8 @@ def predict(func_all, data_all, aniso=False, basal=False):
     uvhm = f_u(x_pred)
     # calculate the network output at the original thickness-data positions
     h2 = f_u(xh_pred)[:, 2:3]
+    if basal:
+        s2 = f_u(xh_pred)[:,3:4]
 
     # set the partition number
     nsp = 4
@@ -101,18 +106,26 @@ def predict(func_all, data_all, aniso=False, basal=False):
     x_h = dataArrange(xh_star, idxval_h, dsize_h) * varscl['lx0'] + varscl['lxm']
     y_h = dataArrange(yh_star, idxval_h, dsize_h) * varscl['ly0'] + varscl['lym']
     h_data = dataArrange(h_star, idxval_h, dsize_h) * varscl['h0']
+    if basal:
+        s_data = dataArrange(s_star, idxval_h, dsize_h) * varscl['h0']
 
     # convert to 2D NN prediction
     u_p = dataArrange(uvhm[:, 0:1], idxval, dsize) * varscl['u0'] + varscl['um']
     v_p = dataArrange(uvhm[:, 1:2], idxval, dsize) * varscl['v0'] + varscl['vm']
     h_p = dataArrange(uvhm[:, 2:3], idxval, dsize) * varscl['h0']
-    h_p2 = dataArrange(h2, idxval_h, dsize_h) * varscl['h0']
-    mu_p = dataArrange(uvhm[:, 3:4], idxval, dsize) * varscl['mu0']
+    if basal:
+        s_p = dataArrange(uvhm[:, 3:4], idxval, dsize) * varscl['h0']
+        mu_p = dataArrange(uvhm[:, 4:5], idxval, dsize) * varscl['mu0']
+        c = dataArrange(uvhm[:, 5:6], idxval, dsize) * varscl['c0']
+        h_p2 = dataArrange(h2, idxval_h, dsize_h) * varscl['h0']
+        s_p2 = dataArrange(s2, idxval_h, dsize_h) * varscl['h0']
+    else:
+        mu_p = dataArrange(uvhm[:, 3:4], idxval, dsize) * varscl['mu0']
+        h_p2 = dataArrange(h2, idxval_h, dsize_h) * varscl['h0']
+
     if aniso:
         eta_p = dataArrange(uvhm[:, 4:5], idxval, dsize) * varscl['mu0']
-    if basal:
-        c = dataArrange(uvhm[:, 4:5], idxval, dsize) * varscl['c0']
-
+    
     # convert to 2D derivative of prediction
     ux_p = dataArrange(duvh[:, 0:1], idxval, dsize) * varscl['u0']/varscl['lx0']
     uy_p = dataArrange(duvh[:, 1:2], idxval, dsize) * varscl['u0']/varscl['ly0']
@@ -165,5 +178,8 @@ def predict(func_all, data_all, aniso=False, basal=False):
         results['c'] = c
         results['e14']=e14 
         results['e24']=e24
+        results['s']=s_p 
+        results['s2']=s_p2
+        results['s_g']=s_data
 
     return results

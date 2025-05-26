@@ -68,31 +68,29 @@ def gov_eqn(net, x, scale, basal=False):
     rx0 = lx0 / l0m
     ry0 = ly0 / l0m
 
-    # [TODO]: Introduce bed implementation, For now, hard code the bed elevation gradient ...
-    # [TODO]: ignore bed topography for now...
-    if basal: 
-        # ocean_mask = lax.stop_gradient(ocean_mask)
-        L_SCALE = 140000
-        # b_y = (l0m/ly0) * (ly0/h0) * (-2 * 500 * (ly0*x[:,1]+ym) / L_SCALE / L_SCALE)
-        # b_y = jnp.expand_dims(b_y, axis=1)
-        b_y=0
-        b_x = 0
-
     def grad1stOrder(net, x, basal=basal):
         # aux_ocean_mask=lax.stop_gradient(aux_ocean_mask)
         grad, sol = vectgrad(net, x)
+        u = sol[:,0:1]
+        v = sol[:,1:2]
         h = sol[:, 2:3] # note that thickness is normalized as h = h_hat * h_m, where h_g has been approximated with h_m
-        mu = sol[:, 3:4]
+        
         if basal:
-            u = sol[:,0:1]
-            v = sol[:,1:2]
-            c = sol[:,4:5]
+            # s = sol[:,3:4]
+            mu = sol[:, 4:5]
+            c = sol[:,5:6]
+        else:
+            mu = sol[:,3:4]
+            
         u_x = grad[:, 0:1] * ru0 / rx0
         u_y = grad[:, 1:2] * ru0 / ry0
         v_x = grad[:, 2:3] * rv0 / rx0
         v_y = grad[:, 3:4] * rv0 / ry0
         h_x = grad[:, 4:5] / rx0
         h_y = grad[:, 5:6] / ry0
+        if basal: 
+            s_x = grad[:,6:7] / rx0 
+            s_y = grad[:,7:8] / ry0
         strate = (u_x ** 2 + v_y ** 2 + 0.25 * (u_y + v_x) ** 2 + u_x * v_y) ** 0.5
 
         term1_1 = 2 * mu * h * (2 * u_x + v_y) 
@@ -108,10 +106,10 @@ def gov_eqn(net, x, scale, basal=False):
             # term1_4 = (1 - aux_ocean_mask)
             # term2_4 = (1 - aux_ocean_mask)
             # print(jnp.shape(term1_4))
-            term1_4 = -c * (rho_w / (rho_w - rho)) * (u0/u0m) * u #(u + um/u0)
-            term2_4 = -c * (rho_w / (rho_w - rho)) * (v0/u0m) * v #(v + vm/v0)
-            term1_3_grounded = (rho_w / (rho_w-rho)) * (term1_3 + h*b_x/rx0)
-            term2_3_grounded = (rho_w / (rho_w-rho)) * (term2_3 + h*b_y/ry0)
+            term1_4 = -c * (u0/u0m) * (u + um/u0)
+            term2_4 = -c * (v0/u0m) * (v + vm/v0)
+            term1_3_grounded = (rho_w / (rho_w-rho)) * h * s_x 
+            term2_3_grounded = (rho_w / (rho_w-rho)) * h * s_y
 
         if basal:
             return jnp.hstack([term1_1, term2_1, term12_2, term1_3, term2_3, strate, term1_4, term2_4, term1_3_grounded, term2_3_grounded])

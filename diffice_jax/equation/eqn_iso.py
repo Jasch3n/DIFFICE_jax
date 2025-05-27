@@ -96,23 +96,18 @@ def gov_eqn(net, x, scale, basal=False):
         term1_1 = 2 * mu * h * (2 * u_x + v_y) 
         term2_1 = 2 * mu * h * (2 * v_y + u_x)
         term12_2 = mu * h * (u_y + v_x)
-        term1_3 = h * h_x
-        term2_3 = h * h_y
+        
         if basal:
-            # term1_4 = c * (u0/u0m) * (u + um/u0) # * (1 - aux_ocean_mask)
-            # term2_4 = c * (v0/u0m) * (v + vm/v0) # * (1 - aux_ocean_mask)
-            # print("Traction terms:", jnp.mean(term1_4).astype(float), jnp.mean(term2_4).astype(float))
-            # print("Viscous terms:", jnp.mean(term1_1).astype(float), jnp.mean(term12_2).astype(float), jnp.mean(term2_1).astype(float))
-            # term1_4 = (1 - aux_ocean_mask)
-            # term2_4 = (1 - aux_ocean_mask)
-            # print(jnp.shape(term1_4))
-            term1_4 = -c * (u0/u0m) * (u + um/u0)
-            term2_4 = -c * (v0/u0m) * (v + vm/v0)
-            term1_3_grounded = (rho_w / (rho_w-rho)) * h * s_x 
-            term2_3_grounded = (rho_w / (rho_w-rho)) * h * s_y
+            term1_4 = c * (u0/u0m) * (u + um/u0)
+            term2_4 = c * (v0/u0m) * (v + vm/v0)
+            term1_3 = h * s_x 
+            term2_3 = h * s_y
+        else:
+            term1_3 = h * h_x
+            term2_3 = h * h_y
 
         if basal:
-            return jnp.hstack([term1_1, term2_1, term12_2, term1_3, term2_3, strate, term1_4, term2_4, term1_3_grounded, term2_3_grounded])
+            return jnp.hstack([term1_1, term2_1, term12_2, term1_3, term2_3, strate, term1_4, term2_4])
         else:
             return jnp.hstack([term1_1, term2_1, term12_2, term1_3, term2_3, strate])
 
@@ -130,26 +125,22 @@ def gov_eqn(net, x, scale, basal=False):
     if basal:
         e1term4 = term[:, 6:7]
         e2term4 = term[:, 7:8]
-        e1term3_grounded = term[:,8:9]
-        e2term3_grounded = term[:,9:10]
 
     e1 = e1term1 + e1term2 - e1term3
     e2 = e2term1 + e2term2 - e2term3
     # print("DEBUG: e1=", e1)
     # print("DEBUG: e2=", e2)
     if basal:
-        e1_grounded = e1term1 + e1term2 - e1term3_grounded + e1term4 
-        e2_grounded = e2term1 + e2term2 - e2term3_grounded + e2term4
+        e1 -= e1term4 
+        e2 -= e2term4
     # print("DEBUG: e1=", e1)
     # print("DEBUG: e2=", e2)
 
     f_eqn = jnp.hstack([e1, e2])
-    # print("DEBUG: f_eqn shape: ", jnp.shape(f_eqn))
+    
     if basal:
-        f_eqn_grounded = jnp.hstack([e1_grounded, e2_grounded])
-    if basal:
-        val_term = jnp.hstack([e1term1, e1term2, e1term3, e2term1, e2term2, e2term3, strate, e1term4, e2term4, e1term3_grounded, e2term3_grounded])
-        return f_eqn, f_eqn_grounded, val_term
+        val_term = jnp.hstack([e1term1, e1term2, e1term3, e2term1, e2term2, e2term3, strate, e1term4, e2term4])
+        return f_eqn, val_term
     else:
         val_term = jnp.hstack([e1term1, e1term2, e1term3, e2term1, e2term2, e2term3, strate])
         return f_eqn, val_term

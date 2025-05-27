@@ -6,6 +6,7 @@ organize the data into a form that is required for the PINN training
 
 import numpy as np
 import jax.numpy as jnp
+from jax import lax
 
 
 def normalize_data(data,basal=False):
@@ -13,6 +14,10 @@ def normalize_data(data,basal=False):
     :param data: original dataset
     :return X_smp, U_smp, X_ct, n_ct, data_info
     '''
+    rho = 917
+    rho_w = 1030
+    g = 9.8
+    gd = g * (1 - rho / rho_w)  # gravitational acceleration
 
     # extract the velocity data
     xraw = data['xd']   # unit [m] position
@@ -24,16 +29,27 @@ def normalize_data(data,basal=False):
     xraw_h = data['xd_h']   # unit [m] position
     yraw_h = data['yd_h']   # unit [m] position
     hraw = data['hd']       # unit [m] ice thickness
+    if basal:
+        sraw = data['sd']
 
     # extract the position of the calving front (right side of the domain)
     xct = data['xct']    # unit [m] position
     yct = data['yct']    # unit [m] position
-    nnct = data['nnct']  # unit vector
-
-    # extract the ocean mask if specified, in case of basal inversion
     if basal:
-        ocean_mask_raw = data['ocean_mask'].astype(jnp.float32)
-        sraw = data['sd']
+        print("Basal. NO nnct")
+        nnct=None
+    else:
+        nnct = data['nnct']  # unit vector
+
+    # extract variables at the grounding line for basal inversions
+    if basal:
+        uraw_gl = data['gl_ud'].flatten()
+        vraw_gl = data['gl_vd'].flatten()
+        muraw_gl = data['gl_mu'].flatten()
+        hraw_gl = data['gl_hd'].flatten()
+        xdraw_walls = data['xd_walls'].flatten()
+        ydraw_walls = data['yd_walls'].flatten()
+
     #%%
 
     # flatten the velocity data into 1d array
@@ -41,8 +57,6 @@ def normalize_data(data,basal=False):
     y0 = yraw.flatten()
     u0 = uraw.flatten()
     v0 = vraw.flatten()
-    if basal:
-        ocean_mask = jnp.expand_dims(ocean_mask_raw.flatten(), axis=1)
 
     # flatten the thickness data into 1d array
     x0_h = xraw_h.flatten()
@@ -57,8 +71,8 @@ def normalize_data(data,basal=False):
     y = y0[idxval_u, None]
     u = u0[idxval_u, None]
     v = v0[idxval_u, None]
-    if basal:
-        ocean_mask[idxval_u, None]
+    # if basal:
+    #     ocean_mask[idxval_u, None]
 
     # remove the nan value in the thickness data
     idxval_h = jnp.where(~np.isnan(h0))[0]
@@ -94,6 +108,13 @@ def normalize_data(data,basal=False):
     y_n = (y - y_mean) / y_range
     u_n = (u - u_mean) / u_range
     v_n = (v - v_mean) / v_range
+    if basal: 
+        u_n_gl = (uraw_gl - u_mean) / u_range
+        v_n_gl = (vraw_gl - v_mean) / v_range
+        x_n_walls = (xdraw_walls - x_mean) / x_range 
+        y_n_walls = (ydraw_walls - y_mean) / y_range
+        u_n_walls = -u_mean / u_range * jnp.ones(jnp.shape(x_n_walls))
+        v_n_walls = -v_mean / v_range * jnp.ones(jnp.shape(x_n_walls))
 
     # normalize the thickness data
     xh_n = (x_h - x_mean) / x_range
@@ -130,6 +151,16 @@ def normalize_data(data,basal=False):
         data_range.append(s_range)
     data_range = jnp.hstack(data_range)
 
+    if basal:
+        lx0, ly0, u0, v0 = data_range[0:4]
+        h0 = data_mean[4]
+        # find the maximum velocity and length scale
+        u0m = lax.max(u0, v0)
+        l0m = lax.max(lx0, ly0)
+        # calculate the scale of viscosity and strain rate
+        mu0 = rho * g * h0 * (l0m / u0m)
+        mu_n_gl = muraw_gl / mu0
+
     # gathering all the data information
     data_info = [data_mean, data_range, data_norm, data_raw, idxval_all, dsize_all]
 
@@ -144,6 +175,10 @@ def normalize_data(data,basal=False):
         U_star.append(s_n)
 
     if basal:
-        return X_star, U_star, X_ct, nnct, data_info, ocean_mask
+        boundary_star = [u_n_gl, v_n_gl, mu_n_gl, x_n_walls, y_n_walls, u_n_walls, v_n_walls]
+
+    if basal:
+        return X_star, U_star, X_ct, nnct, data_info, boundary_star
     else:
         return X_star, U_star, X_ct, nnct, data_info
+# %%

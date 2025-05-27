@@ -64,8 +64,8 @@ def adam_optimizer(key, lossf, params, dataf, epoch, lr=1e-3, aniso=False, schdu
         if (step+1) % 50 == 0:
             # print the results
             if basal:
-                print(f"Step: {step+1} | Loss: {loss_info[0]:.4e} | Loss_d: {loss_info[1]:.4e} |"
-                f" Loss_e: {loss_info[2]:.4e} | Loss_b: {loss_info[3]:.4e} | Loss_gr: {loss_info[4]:.4e}", file=sys.stderr)
+                print(f"Step:{step+1} | Loss:{loss_info[0]:.4e} | d:{loss_info[1]:.4e} | eq:{loss_info[2]:.4e} | "
+                f"b:{loss_info[3]:.4e} | w:{loss_info[4]:.4e}", file=sys.stderr)
             else:
                 print(f"Step: {step+1} | Loss: {loss_info[0]:.4e} | Loss_d: {loss_info[1]:.4e} |"
                 f" Loss_e: {loss_info[2]:.4e} | Loss_b: {loss_info[3]:.4e}", file=sys.stderr)
@@ -75,10 +75,7 @@ def adam_optimizer(key, lossf, params, dataf, epoch, lr=1e-3, aniso=False, schdu
                 lossf.wsp = wsp0 * schdul(step+1)
 
         # saving the loss
-        if basal:
-            loss_all.append(loss_info[0:5])
-        else:
-            loss_all.append(loss_info[0:4])
+        loss_all.append(loss_info[0:(5 if basal else 4)])
 
     # obtain the total loss in the last iterations
     lossend = jnp.array(loss_all[-nc:])[:, 0]
@@ -96,7 +93,7 @@ def adam_optimizer(key, lossf, params, dataf, epoch, lr=1e-3, aniso=False, schdu
         params, loss_info, opt_state = adam_minimizer(lossf, params, data, opt_Adam, opt_state)
         llast = loss_info[0]
         # saving the loss
-        loss_all.append(loss_info[0:4])
+        loss_all.append(loss_info[0:(5 if basal else 4)])
 
     return params, loss_all
 

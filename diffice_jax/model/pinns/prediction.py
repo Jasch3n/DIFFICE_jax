@@ -24,12 +24,19 @@ def extract_scale(scale_info, basal=False):
     # find the maximum velocity and length scale
     u0m = lax.max(u0, v0)
     l0m = lax.max(lx0, ly0)
-    # calculate the scale of viscosity and strain rate
-    mu0 = rho * gd * h0 * (l0m / u0m)
+
+    # calculate the scale of viscosity
+    if basal:
+        mu0 = rho * g * h0 * (l0m / u0m)
+    else:
+        mu0 = rho * gd * h0 * (l0m / u0m)
+
     if basal:
         c0 = (h0 * mu0) / (l0m**2)
     else:
         c0 = jnp.nan
+
+    # calculate scale of strain rate
     str0 = u0m/l0m
     term0 = rho * gd * h0 ** 2 / l0m
     # group characteristic scales for all different variables
@@ -59,11 +66,6 @@ def predict(func_all, data_all, aniso=False, basal=False):
 
     # extract the function of solution and equation residue
     [f_u, f_gu, gov_eqn] = func_all
-    if basal:
-        ocean_mask = data_all[-1]
-    else:
-        ocean_mask = None
-    print("predict: ", jnp.shape(ocean_mask))
     f_eqn = lambda x: gov_eqn(f_u, x, scale, basal=basal)
 
     # calculate the network output at the original velocity-data positions
@@ -82,18 +84,11 @@ def predict(func_all, data_all, aniso=False, basal=False):
     du_list = tree_map(lambda x: f_gu(x_psp[x]), idxsp)
     # calculate the associated equation residue of the trained network
     eqnterm_list = tree_map(lambda x: f_eqn(x_psp[x]), idxsp)
-    if basal:
-        eqn_list = tree_map(lambda x: eqnterm_list[x][0], idxsp)
-        eqn_grounded_list = tree_map(lambda x: eqnterm_list[x][1], idxsp)
-        term_list = tree_map(lambda x: eqnterm_list[x][2], idxsp)
-    else:
-        eqn_list = tree_map(lambda x: eqnterm_list[x][0], idxsp)
-        term_list = tree_map(lambda x: eqnterm_list[x][1], idxsp)
+    eqn_list = tree_map(lambda x: eqnterm_list[x][0], idxsp)
+    term_list = tree_map(lambda x: eqnterm_list[x][1], idxsp)
     # combine the sub-group list into a long array
     duvh = jnp.vstack(du_list)
     eqn = jnp.vstack(eqn_list)
-    if basal:
-        eqn_grounded = jnp.vstack(eqn_grounded_list)
     term = jnp.vstack(term_list)
 
     # convert to 2D original velocity dataset
@@ -137,11 +132,6 @@ def predict(func_all, data_all, aniso=False, basal=False):
     # convert to 2D equation residue
     e1 = dataArrange(eqn[:, 0:1], idxval, dsize) * varscl['term0']
     e2 = dataArrange(eqn[:, 1:2], idxval, dsize) * varscl['term0']
-    if basal: 
-        e1_grounded = dataArrange(eqn_grounded[:, 0:1], idxval, dsize) * varscl['term0']
-        e2_grounded = dataArrange(eqn_grounded[:, 1:2], idxval, dsize) * varscl['term0']
-        e1 = ocean_mask*e1 + (1-ocean_mask)*e1_grounded 
-        e2 = ocean_mask*e2 + (1-ocean_mask)*e2_grounded
 
     # convert to 2D equation term value
     e11 = dataArrange(term[:, 0:1], idxval, dsize) * varscl['term0']
@@ -155,12 +145,6 @@ def predict(func_all, data_all, aniso=False, basal=False):
     if basal:
         e14 = dataArrange(term[:, 7:8], idxval, dsize) * varscl['term0']
         e24 = dataArrange(term[:, 8:9], idxval, dsize) * varscl['term0']
-        e14 = (1 - ocean_mask) * e14 
-        e24 = (1 - ocean_mask) * e24
-        e13_grounded = dataArrange(term[:, 9:10], idxval, dsize) * varscl['term0']
-        e23_grounded = dataArrange(term[:, 10:11], idxval, dsize) * varscl['term0']
-        e13 = ocean_mask*e13 + (1-ocean_mask)*e13_grounded 
-        e23 = ocean_mask*e23 + (1-ocean_mask)*e23_grounded 
     strate = dataArrange(term[:, 6:7], idxval, dsize) * varscl['str0']
 
     # group all the variables
@@ -171,7 +155,7 @@ def predict(func_all, data_all, aniso=False, basal=False):
                "h_x": hx_p, "h_y": hy_p, "str": strate, "mu": mu_p,
                "e11": e11, "e12": e12, "e13": e13,
                "e21": e21, "e22": e22, "e23": e23,
-               "e1": e1, "e2": e2, "scale": varscl, "ocean_mask":ocean_mask}
+               "e1": e1, "e2": e2, "scale": varscl}
     if aniso:
         results['eta'] = eta_p
     if basal:

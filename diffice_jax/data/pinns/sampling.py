@@ -1,5 +1,6 @@
 import jax.numpy as jnp
 from jax import random
+import jax
 
 
 # wrapper to create function that can re-sample the dataset and collocation points
@@ -7,11 +8,13 @@ def data_sample_create(data_all, n_pt,basal=False):
     # load the data within ice shelf
     X_star = data_all[0]
     U_star = data_all[1]
-    if basal:
-        ocean_mask = data_all[5]
+    # if basal:
+    #     ocean_mask = data_all[5]
     # load the data at the ice front
     X_ct = data_all[2]
     nn_ct = data_all[3]
+    if basal:
+        u_gl, v_gl, mu_gl, X_wall, Y_wall, U_wall, V_wall = data_all[5]
     # obtain the number of data points and points at the boundary
     n_data = X_star[0].shape[0]
     nh_data = X_star[1].shape[0]
@@ -26,8 +29,6 @@ def data_sample_create(data_all, n_pt,basal=False):
         idx_smp = random.choice(keys[0], jnp.arange(n_data), [n_pt[0]])
         X_smp = X_star[0][idx_smp]
         U_smp = U_star[0][idx_smp]
-        if basal:
-            ocean_mask_smp = ocean_mask[idx_smp]
 
         # sampling the thickness data point based on the index
         idxh_smp = random.choice(keys[1], jnp.arange(nh_data), [n_pt[1]])
@@ -40,18 +41,25 @@ def data_sample_create(data_all, n_pt,basal=False):
         idx_col = random.choice(keys[2], jnp.arange(n_data), [n_pt[2]])
         # sampling the data point based on the index
         X_col = X_star[0][idx_col]
-        if basal:
-            ocean_mask_col = ocean_mask[idx_col]
         
         # generate a random index of the data at ice front
         idx_cbd = random.choice(keys[3], jnp.arange(n_bd), [n_pt[3]])
         # sampling the data point based on the index
         X_bd = X_ct[idx_cbd]
-        nn_bd = nn_ct[idx_cbd]
+        if basal: 
+            mu_bd = mu_gl[idx_cbd]
+            u_bd = jnp.expand_dims(u_gl[idx_cbd], axis=1)
+            v_bd = jnp.expand_dims(v_gl[idx_cbd], axis=1)
+            x_wall = jnp.expand_dims(X_wall, axis=1)
+            y_wall = jnp.expand_dims(Y_wall, axis=1)
+            u_wall = jnp.expand_dims(U_wall, axis=1)
+            v_wall = jnp.expand_dims(V_wall, axis=1)
+        else:
+            nn_bd = nn_ct[idx_cbd]
 
         # group all the data and collocation points
         if basal:
-            data = dict(smp=[X_smp, U_smp, Xh_smp, H_smp, S_smp], col=[X_col, ocean_mask_col],  bd=[X_bd, nn_bd], ocean_mask=[X_star[0], ocean_mask])
+            data = dict(smp=[X_smp, U_smp, Xh_smp, H_smp, S_smp], col=[X_col],  bd=[X_bd, jnp.hstack((u_bd, v_bd)), mu_bd], wall=[jnp.hstack((x_wall, y_wall)), jnp.hstack((u_wall, v_wall))])
         else: 
             data = dict(smp=[X_smp, U_smp, Xh_smp, H_smp], col=[X_col],  bd=[X_bd, nn_bd])
         return data

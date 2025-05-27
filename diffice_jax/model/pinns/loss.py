@@ -14,7 +14,7 @@ def loss_iso_create(predf, eqn_all, scale, lw, basal=False):
     :param eqn_all: governing equation and boundary conditions
     :return: a loss function (callable)
     '''
-    is_basal = basal
+    # is_basal = basal
     # print("loss_iso_create thinks is_basal is", is_basal)
     # separate the governing equation and boundary conditions
     gov_eqn, front_eqn = eqn_all
@@ -40,52 +40,35 @@ def loss_iso_create(predf, eqn_all, scale, lw, basal=False):
         # load the position and weight of collocation points
         x_col = data['col'][0]
         x_bd = data['bd'][0]
-        nn_bd = data['bd'][1]
-
-        # whole-domain coordinates for the grounded friction constraint
-        x_pred = data['ocean_mask'][0]
+        if basal:
+            u_bd = data['bd'][1]
+            mu_bd = data['bd'][2]
+            x_wall = data['wall'][0]
+            u_wall = data['wall'][1]
+        else:
+            nn_bd = data['bd'][1]
 
         # calculate the gradient of phi at origin
         u_pred = net(x_smp)[:, 0:2]
         h_pred = net(xh_smp)[:, 2:3]
-        if is_basal: 
+        if basal: 
             s_pred = net(xh_smp)[:, 3:4]
-            c_pred = net(x_pred)[:,5:6]
-            ocean_mask_whole = data['ocean_mask'][1]
-        # print("DEBUG: u_pred shape:", jnp.shape(u_pred))
-        # print("DEBUG: h_pred shape:", jnp.shape(h_pred))
 
-        # calculate the residue of equation
-        if is_basal:
-            ocean_mask_col = data['col'][1]
+        f_pred, term = gov_eqn(net, x_col, scale, basal=basal)
+        if basal:
+            gl_pred = net(x_bd)
+            mu_bd_pred = net(x_bd)[:,4:5]
+            u_bd_pred = jnp.hstack((gl_pred[:, 0:1], gl_pred[:, 1:2]))
+            mu_bd_pred = gl_pred[:, 4:5].flatten()
+            mu_bd_err = ms_error(mu_bd_pred - mu_bd)
+            u_bd_err = ms_error(u_bd_pred - u_bd)
+            bd_err = jnp.hstack((u_bd_err, mu_bd_err))
         else:
-            ocean_mask_col = None
+            f_bd, term_bd = front_eqn(net, x_bd, nn_bd, scale)
 
-        if is_basal:
-            f_pred, f_pred_grounded, term = gov_eqn(net, x_col, scale, basal=is_basal)
-            # e1term1 = term[:,0:1]
-            # e2term1 = term[:,1:2]
-            # e12term2 = term[:,2:3]
-            # e1term3 = term[:,3:4]
-            # e2term3 = term[:,4:5]
-            # e1term4 = term[:,6:7]
-            # e2term4 = term[:,7:8]
-            # e1term3_grounded = term[:,8:9]
-            # e2term3_grounded = term[:,9:10]
-            # jax.debug.print("--------------------------")
-            # jax.debug.print("")
-            # jax.debug.print("viscous terms | xx={:.6f}, yy={:.6f}, xy={:.6f}",
-            #                 ms_error(e1term1)[0], ms_error(e2term1)[0], ms_error(e12term2)[0])
-            # jax.debug.print("basal traction terms | x={:.6f}, y={:.6f}",
-            #                 ms_error(e1term4)[0], ms_error(e2term4)[0])
-            # jax.debug.print("grav drive terms | xdir={:.6f}, ydir={:.6f}",
-            #                 ms_error(e1term3_grounded)[0], ms_error(e2term3_grounded)[0])
-            # jax.debug.print("eq residue | xdir={:.6f}, ydir={:.6f}",
-            #                 ms_error(f_pred_grounded[:,0:1])[0], ms_error(f_pred_grounded[:,0:1])[0])
-        else:
-            f_pred, term = gov_eqn(net, x_col, scale, basal=is_basal)
-        # print("DEBUG: f_pred shape:", jnp.shape(f_pred))
-        f_bd, term_bd = front_eqn(net, x_bd, nn_bd, scale)
+        if basal: 
+            u_wall_pred = net(x_wall)[:,0:2]
+            u_wall_err = ms_error(u_wall_pred - u_wall)
 
         # calculate the mean squared root error of normalization cond.
         data_u_err = ms_error(u_pred - u_smp)
@@ -99,49 +82,40 @@ def loss_iso_create(predf, eqn_all, scale, lw, basal=False):
             data_err = jnp.hstack((data_u_err, data_h_err))
 
         # calculate the mean squared root error of equation
-        if is_basal:
-            eqn_err = ms_error(ocean_mask_col*f_pred + (1-ocean_mask_col)*f_pred_grounded)
-        else:
-            eqn_err = ms_error(f_pred)
-        
-        # calculate the mean squared root error of boundary condition (calving front)
-        bd_err = ms_error(f_bd)
-
-        # constrain basal friction to grounded ice 
-        if is_basal:
-            grounded_err = ms_error(ocean_mask_whole * c_pred)
-            # grounded_err = 0
+        eqn_err = ms_error(f_pred)
+        # calculate the mean squared root error of boundary condition
+    
+        if not basal:
+            bd_err = ms_error(f_bd)
 
         # set the weight for each condition and equation
         if basal:
-            data_weight = jnp.array([1., 1., 0.6, 0.6])
+            data_weight = jnp.array([1., 1., 0.6, 0.6]) # include a weight for surface elevation
         else:
             data_weight = jnp.array([1., 1., 0.6])
         eqn_weight = jnp.array([1., 1.])
-        bd_weight = jnp.array([1., 1.])
-        if is_basal:
-            grounded_weight = jnp.array([1.])
+
+        if basal:
+            bd_weight = jnp.array([0., 0., 1.])
+        else:
+            bd_weight = jnp.array([1., 1.])
 
         # calculate the overall data loss and equation loss
         loss_data = jnp.sum(data_err * data_weight)
         loss_eqn = jnp.sum(eqn_err * eqn_weight)
         loss_bd = jnp.sum(bd_err * bd_weight)
-        if is_basal:
-            loss_grounded = jnp.sum(grounded_err * grounded_weight)
-            # loss_grounded = 0.
+        if basal:
+            loss_wall = jnp.sum(u_wall_err)
+        else:
+            loss_wall = 0
 
         # load the loss_ref
         loss_ref = loss_fun.lref
         # calculate the total loss
         # # group the loss of all conditions and equations
-        if is_basal:
-            loss = (loss_data + lw[0] * loss_eqn + lw[1] * loss_bd + lw[2]*loss_grounded) / loss_ref
-            loss_info = jnp.hstack([jnp.array([loss, loss_data, loss_eqn, loss_bd, loss_grounded]),
-                                data_err, eqn_err, bd_err, grounded_err])
-        else:
-            loss = (loss_data + lw[0] * loss_eqn + lw[1] * loss_bd) / loss_ref
-            loss_info = jnp.hstack([jnp.array([loss, loss_data, loss_eqn, loss_bd]),
-                                    data_err, eqn_err, bd_err])
+        loss = (lw[0]*loss_data + lw[1] * loss_eqn + lw[2] * loss_bd + 0.01*lw[0]*loss_wall) / loss_ref
+        loss_info = jnp.hstack([jnp.array([loss, loss_data, loss_eqn, loss_bd, loss_wall]),
+                                data_err, eqn_err, bd_err, u_wall_err])
         return loss, loss_info
 
     loss_fun.lref = 1.0

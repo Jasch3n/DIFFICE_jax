@@ -27,12 +27,12 @@ def extract_scale(scale_info, basal=False):
 
     # calculate the scale of viscosity
     if basal:
-        mu0 = rho * g * h0 * (l0m / u0m)
+        mu0 = rho * g * h0 * (l0m / u0m) / 1000
     else:
         mu0 = rho * gd * h0 * (l0m / u0m)
 
     if basal:
-        c0 = (h0 * mu0) / (l0m**2)
+        c0 = (h0 * mu0) / (l0m**2) * 1000
     else:
         c0 = jnp.nan
 

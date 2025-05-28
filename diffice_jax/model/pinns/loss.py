@@ -113,7 +113,7 @@ def loss_iso_create(predf, eqn_all, scale, lw, basal=False):
         loss_ref = loss_fun.lref
         # calculate the total loss
         # # group the loss of all conditions and equations
-        loss = (lw[0]*loss_data + lw[1] * loss_eqn + lw[2] * loss_bd + lw[0]*loss_wall) / loss_ref
+        loss = (lw[0]*loss_data + lw[1] * loss_eqn + lw[2] * loss_bd + 0.0*loss_wall) / loss_ref
         loss_info = jnp.hstack([jnp.array([loss, loss_data, loss_eqn, loss_bd, loss_wall]),
                                 data_err, eqn_err, bd_err, u_wall_err])
         return loss, loss_info

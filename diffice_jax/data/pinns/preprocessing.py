@@ -157,7 +157,7 @@ def normalize_data(data,basal=False):
         # find the maximum velocity and length scale
         u0m = lax.max(u0, v0)
         l0m = lax.max(lx0, ly0)
-        # calculate the scale of viscosity and strain rate
+        # calculate the scale of viscosity
         mu0 = rho * g * h0 * (l0m / u0m)
         mu_n_gl = muraw_gl / mu0
 

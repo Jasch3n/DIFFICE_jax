@@ -60,7 +60,7 @@ def loss_iso_create(predf, eqn_all, scale, lw, basal=False):
             mu_bd_pred = net(x_bd)[:,4:5]
             u_bd_pred = jnp.hstack((gl_pred[:, 0:1], gl_pred[:, 1:2]))
             mu_bd_pred = gl_pred[:, 4:5].flatten()
-            mu_bd_err = ms_error(mu_bd_pred - mu_bd)
+            mu_bd_err = ms_error(jnp.log(mu_bd_pred) - jnp.log(mu_bd))
             u_bd_err = ms_error(u_bd_pred - u_bd)
             bd_err = jnp.hstack((u_bd_err, mu_bd_err))
         else:
@@ -96,7 +96,7 @@ def loss_iso_create(predf, eqn_all, scale, lw, basal=False):
         eqn_weight = jnp.array([1., 1.])
 
         if basal:
-            bd_weight = jnp.array([0., 0., 1.])
+            bd_weight = jnp.array([1., 1., 1.])
         else:
             bd_weight = jnp.array([1., 1.])
 
@@ -113,7 +113,7 @@ def loss_iso_create(predf, eqn_all, scale, lw, basal=False):
         loss_ref = loss_fun.lref
         # calculate the total loss
         # # group the loss of all conditions and equations
-        loss = (lw[0]*loss_data + lw[1] * loss_eqn + lw[2] * loss_bd + 0.01*lw[0]*loss_wall) / loss_ref
+        loss = (lw[0]*loss_data + lw[1] * loss_eqn + lw[2] * loss_bd + lw[0]*loss_wall) / loss_ref
         loss_info = jnp.hstack([jnp.array([loss, loss_data, loss_eqn, loss_bd, loss_wall]),
                                 data_err, eqn_err, bd_err, u_wall_err])
         return loss, loss_info

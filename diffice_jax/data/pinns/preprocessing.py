@@ -15,7 +15,7 @@ def normalize_data(data,basal=False):
     :return X_smp, U_smp, X_ct, n_ct, data_info
     '''
     rho = 917
-    rho_w = 1030
+    rho_w = 1023
     g = 9.8
     gd = g * (1 - rho / rho_w)  # gravitational acceleration
 

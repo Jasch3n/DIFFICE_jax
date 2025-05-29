@@ -98,9 +98,9 @@ def gov_eqn(net, x, scale, basal=False):
         term12_2 = mu * h * (u_y + v_x)
         
         if basal:
-            # term1_1 *= 1000
-            # term2_1 *= 1000
-            # term12_2 *= 1000
+            # term1_1 *= 100
+            # term2_1 *= 100
+            # term12_2 *= 100
             term1_4 = c * (u0/u0m) * (u + um/u0)
             term2_4 = c * (v0/u0m) * (v + vm/v0)
             term1_3 = h * s_x 
@@ -126,6 +126,10 @@ def gov_eqn(net, x, scale, basal=False):
     e2term3 = term[:, 4:5]
     strate = term[:, 5:6]
     if basal:
+        e1term1*=100
+        e1term2*=100
+        e2term1*=100
+        e2term2*=100
         e1term4 = term[:, 6:7]
         e2term4 = term[:, 7:8]
 

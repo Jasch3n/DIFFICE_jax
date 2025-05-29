@@ -46,7 +46,7 @@ def normalize_data(data,basal=False):
         uraw_gl = data['gl_ud'].flatten()
         vraw_gl = data['gl_vd'].flatten()
         muraw_gl = data['gl_mu'].flatten()
-        hraw_gl = data['gl_hd'].flatten()
+        # hraw_gl = data['gl_hd'].flatten()
         xdraw_walls = data['xd_walls'].flatten()
         ydraw_walls = data['yd_walls'].flatten()
 
@@ -158,8 +158,8 @@ def normalize_data(data,basal=False):
         u0m = lax.max(u0, v0)
         l0m = lax.max(lx0, ly0)
         # calculate the scale of viscosity
-        # mu0 = rho * g * h0 * (l0m / u0m) / 1000.
-        mu0 = rho * g * h0 * (l0m / u0m)
+        mu0 = rho * g * h0 * (l0m / u0m) * 100.
+        # mu0 = rho * g * h0 * (l0m / u0m)
         mu_n_gl = muraw_gl / mu0
 
     # gathering all the data information

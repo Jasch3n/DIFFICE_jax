@@ -131,7 +131,6 @@ with open(FilePath, 'wb') as f:
 #%% prediction
 
 # create the function for trained solution and equation residues
-f_u = lambda x: pred_u(trained_params, x)
 f_gu = lambda x: vectgrad(f_u, x)[0][:, 0:6]
 # group all the function
 func_all = (f_u, f_gu, gov_eqn)

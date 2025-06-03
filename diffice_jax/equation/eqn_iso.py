@@ -126,27 +126,41 @@ def gov_eqn(net, x, scale, basal=False):
     e2term3 = term[:, 4:5]
     strate = term[:, 5:6]
     if basal:
-        e1term1*=100
-        e1term2*=100
-        e2term1*=100
-        e2term2*=100
+        # e1term1*=100
+        # e1term2*=100
+        # e2term1*=100
+        # e2term2*=100
         e1term4 = term[:, 6:7]
         e2term4 = term[:, 7:8]
 
-    e1 = e1term1 + e1term2 - e1term3
-    e2 = e2term1 + e2term2 - e2term3
+    # e1 = e1term1 + e1term2 - e1term3
+    # e2 = e2term1 + e2term2 - e2term3
     # print("DEBUG: e1=", e1)
     # print("DEBUG: e2=", e2)
     if basal:
-        e1 -= e1term4 
-        e2 -= e2term4
+        # e1_lhs = e1term1 + e1term2 
+        # e1_rhs = e1term3 + e1term4 
+        # e2_lhs = e2term1 + e2term2 
+        # e2_rhs = e2term3 + e2term4 
+        visc_terms_1 = e1term1 + e1term2 
+        grav_basal_terms_1 = e1term3 + e1term4 
+        visc_terms_2 = e2term1 + e2term2 
+        grav_basal_terms_2 = e2term3 + e2term4 
+        e1 = visc_terms_1 - grav_basal_terms_1 
+        e2 = visc_terms_2 - grav_basal_terms_2
+    else:
+        e1 = e1term1 + e1term2 - e1term3
+        e2 = e2term1 + e2term2 - e2term3
     # print("DEBUG: e1=", e1)
     # print("DEBUG: e2=", e2)
 
+    # if basal:
+    #     f_eqn = jnp.hstack([e1_lhs, e1_rhs, e2_lhs, e2_rhs])
     f_eqn = jnp.hstack([e1, e2])
     
     if basal:
-        val_term = jnp.hstack([e1term1, e1term2, e1term3, e2term1, e2term2, e2term3, strate, e1term4, e2term4])
+        val_term = jnp.hstack([e1term1, e1term2, e1term3, e2term1, e2term2, e2term3, strate, 
+                               e1term4, e2term4, visc_terms_1, grav_basal_terms_1, visc_terms_2, grav_basal_terms_2])
         return f_eqn, val_term
     else:
         val_term = jnp.hstack([e1term1, e1term2, e1term3, e2term1, e2term2, e2term3, strate])

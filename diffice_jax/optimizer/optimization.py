@@ -65,7 +65,7 @@ def adam_optimizer(key, lossf, params, dataf, epoch, lr=1e-3, aniso=False, schdu
             # print the results
             if basal:
                 print(f"Step:{step+1} | Loss:{loss_info[0]:.4e} | d:{loss_info[1]:.4e} | eq:{loss_info[2]:.4e} | "
-                f"b:{loss_info[3]:.4e} | w:{loss_info[4]:.4e}", file=sys.stderr)
+                f"b:{loss_info[3]:.4e} | mag:{loss_info[5]:.4e}", file=sys.stderr)
             else:
                 print(f"Step: {step+1} | Loss: {loss_info[0]:.4e} | Loss_d: {loss_info[1]:.4e} |"
                 f" Loss_e: {loss_info[2]:.4e} | Loss_b: {loss_info[3]:.4e}", file=sys.stderr)

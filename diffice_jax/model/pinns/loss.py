@@ -5,6 +5,9 @@ import jax
 def ms_error(diff):
     return jnp.mean(jnp.square(diff), axis=0)
 
+def ma_error(diff):
+    return jnp.mean(jnp.abs(diff), axis=0)
+
 
 #%% loss for inferring isotropic viscosity
 
@@ -82,7 +85,18 @@ def loss_iso_create(predf, eqn_all, scale, lw, basal=False):
             data_err = jnp.hstack((data_u_err, data_h_err))
 
         # calculate the mean squared root error of equation
-        eqn_err = ms_error(f_pred)
+        if basal:
+            # e1_err = ma_error(f_pred[:,0:1] - f_pred[:,1:2])
+            # e2_err = ma_error(f_pred[:,2:3] - f_pred[:,3:4])
+            # eqn_err = jnp.hstack([e1_err, e2_err])
+            eqn_err = ma_error(f_pred)
+            visc_1 = term[:, 9:10]
+            grav_basal_1 = term[:, 10:11]
+            visc_2 = term[:, 11:12]
+            grav_basal_2 = term[:, 12:13]
+            mag_err = jnp.hstack([jnp.abs(ms_error(visc_1) - ms_error(grav_basal_1)), jnp.abs(ms_error(visc_2)-ms_error(grav_basal_2))])
+        else:
+            eqn_err = ms_error(f_pred)
         # calculate the mean squared root error of boundary condition
     
         if not basal:
@@ -93,7 +107,10 @@ def loss_iso_create(predf, eqn_all, scale, lw, basal=False):
             data_weight = jnp.array([1., 1., 0.6, 0.6]) # include a weight for surface elevation
         else:
             data_weight = jnp.array([1., 1., 0.6])
+
         eqn_weight = jnp.array([1., 1.])
+        if basal:
+            mag_weight = jnp.array([1., 1.])
 
         if basal:
             bd_weight = jnp.array([1., 1., 1.])
@@ -103,6 +120,8 @@ def loss_iso_create(predf, eqn_all, scale, lw, basal=False):
         # calculate the overall data loss and equation loss
         loss_data = jnp.sum(data_err * data_weight)
         loss_eqn = jnp.sum(eqn_err * eqn_weight)
+        if basal:
+            loss_mag = jnp.sum(mag_err * mag_weight)
         loss_bd = jnp.sum(bd_err * bd_weight)
         if basal:
             loss_wall = jnp.sum(u_wall_err)
@@ -113,9 +132,10 @@ def loss_iso_create(predf, eqn_all, scale, lw, basal=False):
         loss_ref = loss_fun.lref
         # calculate the total loss
         # # group the loss of all conditions and equations
-        loss = (lw[0]*loss_data + lw[1] * loss_eqn + lw[2]*loss_bd) / loss_ref
-        loss_info = jnp.hstack([jnp.array([loss, loss_data, loss_eqn, loss_bd, loss_wall]),
+        loss = (lw[0]*loss_data + lw[1]*loss_eqn + lw[2]*loss_mag + lw[3]*loss_bd) / loss_ref
+        loss_info = jnp.hstack([jnp.array([loss, loss_data, loss_eqn, loss_bd, loss_wall, loss_mag]),
                                 data_err, eqn_err, bd_err, u_wall_err])
+        
         return loss, loss_info
 
     loss_fun.lref = 1.0

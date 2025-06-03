@@ -27,20 +27,23 @@ def extract_scale(scale_info, basal=False):
 
     # calculate the scale of viscosity
     if basal:
-        mu0 = rho * g * h0 * (l0m / u0m) * 100
-        # mu0 = rho * g * h0 * (l0m / u0m)
+        # mu0 = rho * g * h0 * (l0m / u0m) * 100
+        mu0 = rho * g * h0 * (l0m / u0m)
     else:
         mu0 = rho * gd * h0 * (l0m / u0m)
 
     if basal:
-        c0 = (h0 * mu0) / (100 * l0m**2)
-        # c0 = (h0 * mu0) / (l0m**2)
+        # c0 = (h0 * mu0) / (100 * l0m**2)
+        c0 = (h0 * mu0) / (l0m**2)
     else:
         c0 = jnp.nan
 
     # calculate scale of strain rate
     str0 = u0m/l0m
-    term0 = rho * gd * h0 ** 2 / l0m
+    if basal:
+        term0 = rho * g * h0 ** 2 / l0m
+    else:
+        term0 = rho * gd * h0 ** 2 / l0m
     # group characteristic scales for all different variables
     scale = dict(lx0=lx0, ly0=ly0, u0=u0, v0=v0, h0=h0,
                  lxm=lxm, lym=lym, um=um, vm=vm,

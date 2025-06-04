@@ -94,7 +94,7 @@ def loss_iso_create(predf, eqn_all, scale, lw, basal=False):
             grav_basal_1 = term[:, 10:11]
             visc_2 = term[:, 11:12]
             grav_basal_2 = term[:, 12:13]
-            mag_err = jnp.hstack([jnp.abs(ms_error(visc_1) - ms_error(grav_basal_1)), jnp.abs(ms_error(visc_2)-ms_error(grav_basal_2))])
+            mag_err = jnp.hstack([ms_error(jnp.abs(visc_1) - jnp.abs(grav_basal_1)), ms_error(jnp.abs(visc_2)-jnp.abs(grav_basal_2))])
         else:
             eqn_err = ms_error(f_pred)
         # calculate the mean squared root error of boundary condition

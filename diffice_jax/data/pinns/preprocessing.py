@@ -7,6 +7,7 @@ organize the data into a form that is required for the PINN training
 import numpy as np
 import jax.numpy as jnp
 from jax import lax
+from jax import debug
 
 
 def normalize_data(data,basal=False):
@@ -46,6 +47,7 @@ def normalize_data(data,basal=False):
         uraw_gl = data['gl_ud'].flatten()
         vraw_gl = data['gl_vd'].flatten()
         muraw_gl = data['gl_mu'].flatten()
+        bd_mu_raw = data['bd_mu'].flatten()
         # hraw_gl = data['gl_hd'].flatten()
         xdraw_walls = data['xd_walls'].flatten()
         ydraw_walls = data['yd_walls'].flatten()
@@ -82,6 +84,14 @@ def normalize_data(data,basal=False):
     if basal:
         s = s0[idxval_h, None]
 
+    # remove invalid values in boundary data 
+    debug.print(str(jnp.shape(xct)))
+    debug.print(str(jnp.shape(yct)))
+    if basal:
+        idxval_bd = jnp.where(~np.isnan(bd_mu_raw) & ~np.isinf(bd_mu_raw))[0]
+        bd_mu_raw = bd_mu_raw[idxval_bd, None].flatten()
+        xct = jnp.squeeze(xct[idxval_bd, None], 2)
+        yct = jnp.squeeze(yct[idxval_bd, None], 2)
     #%%
     # calculate the mean and range of the domain
     x_mean = jnp.mean(x)
@@ -161,6 +171,7 @@ def normalize_data(data,basal=False):
         # mu0 = rho * g * h0 * (l0m / u0m) * 100.
         mu0 = rho * g * h0 * (l0m / u0m)
         mu_n_gl = muraw_gl / mu0
+        mu_n_bd = bd_mu_raw / mu0
 
     # gathering all the data information
     data_info = [data_mean, data_range, data_norm, data_raw, idxval_all, dsize_all]
@@ -176,7 +187,7 @@ def normalize_data(data,basal=False):
         U_star.append(s_n)
 
     if basal:
-        boundary_star = [u_n_gl, v_n_gl, mu_n_gl, x_n_walls, y_n_walls, u_n_walls, v_n_walls]
+        boundary_star = [u_n_gl, v_n_gl, mu_n_bd, x_n_walls, y_n_walls, u_n_walls, v_n_walls]
 
     if basal:
         return X_star, U_star, X_ct, nnct, data_info, boundary_star

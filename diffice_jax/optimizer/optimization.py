@@ -99,7 +99,7 @@ def adam_optimizer(key, lossf, params, dataf, epoch, lr=1e-3, aniso=False, schdu
 
 
 # A factory to create a function required by tfp.optimizer.lbfgs_minimize.
-def lbfgs_function(lossf, init_params, data):
+def lbfgs_function(lossf, init_params, data, basal=False):
     # obtain the 1D parameters and the function that can turn back to the pytree
     _, unflat = flat_utl.ravel_pytree(init_params)
 
@@ -120,9 +120,13 @@ def lbfgs_function(lossf, init_params, data):
         loss_value = loss_info[0]
 
         # # store loss value so we can retrieve later
-        call(lambda x: f.loss.append(x), loss_info[0:4])
-        call(lambda x: print(f"Step: NaN | Loss: {x[0]:.4e} | Loss_d: {x[1]:.4e}"
-                  f" Loss_e: {x[2]:.4e} | Loss_b: {x[3]:.4e}"), loss_info)
+        call(lambda x: f.loss.append(x), loss_info[0:(5 if basal else 4)])
+        if basal:
+            call(lambda x: print(f"Step:NaN | Loss:{x[0]:.4e} | d:{x[1]:.4e} | eq:{x[2]:.4e} | "
+            f"b:{x[3]:.4e} | mag:{x[5]:.4e}", file=sys.stderr), loss_info)
+        else:
+            call(lambda x: print(f"Step:NaN | Loss: {x[0]:.4e} | Loss_d: {x[1]:.4e} |"
+            f" Loss_e: {x[2]:.4e} | Loss_b: {x[3]:.4e}", file=sys.stderr), loss_info)
         return loss_value, grads_1d
 
     # store these information as members so we can use them outside the scope
@@ -132,8 +136,8 @@ def lbfgs_function(lossf, init_params, data):
 
 
 # define the function to apply the L-BFGS optimizer
-def lbfgs_optimizer(lossf, params, data, epoch):
-    func_lbfgs = lbfgs_function(lossf, params, data)
+def lbfgs_optimizer(lossf, params, data, epoch, basal=False):
+    func_lbfgs = lbfgs_function(lossf, params, data, basal=basal)
     # convert initial model parameters to a 1D array
     init_params_1d = flat_utl.ravel_pytree(params)[0]
     # calculate the effective number of iteration

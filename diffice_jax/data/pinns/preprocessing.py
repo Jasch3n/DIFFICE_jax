@@ -44,13 +44,10 @@ def normalize_data(data,basal=False):
 
     # extract variables at the grounding line for basal inversions
     if basal:
-        uraw_gl = data['gl_ud'].flatten()
-        vraw_gl = data['gl_vd'].flatten()
-        muraw_gl = data['gl_mu'].flatten()
         bd_mu_raw = data['bd_mu'].flatten()
+        bd_u_raw = data['bd_ud'].flatten()
+        bd_v_raw = data['bd_vd'].flatten()
         # hraw_gl = data['gl_hd'].flatten()
-        xdraw_walls = data['xd_walls'].flatten()
-        ydraw_walls = data['yd_walls'].flatten()
 
     #%%
 
@@ -90,6 +87,8 @@ def normalize_data(data,basal=False):
     if basal:
         idxval_bd = jnp.where(~np.isnan(bd_mu_raw) & ~np.isinf(bd_mu_raw))[0]
         bd_mu_raw = bd_mu_raw[idxval_bd, None].flatten()
+        bd_u_raw = bd_u_raw[idxval_bd, None].flatten()
+        bd_v_raw = bd_v_raw[idxval_bd, None].flatten()
         xct = jnp.squeeze(xct[idxval_bd, None], 2)
         yct = jnp.squeeze(yct[idxval_bd, None], 2)
     #%%
@@ -118,13 +117,6 @@ def normalize_data(data,basal=False):
     y_n = (y - y_mean) / y_range
     u_n = (u - u_mean) / u_range
     v_n = (v - v_mean) / v_range
-    if basal: 
-        u_n_gl = (uraw_gl - u_mean) / u_range
-        v_n_gl = (vraw_gl - v_mean) / v_range
-        x_n_walls = (xdraw_walls - x_mean) / x_range 
-        y_n_walls = (ydraw_walls - y_mean) / y_range
-        u_n_walls = -u_mean / u_range * jnp.ones(jnp.shape(x_n_walls))
-        v_n_walls = -v_mean / v_range * jnp.ones(jnp.shape(x_n_walls))
 
     # normalize the thickness data
     xh_n = (x_h - x_mean) / x_range
@@ -170,8 +162,9 @@ def normalize_data(data,basal=False):
         # calculate the scale of viscosity
         # mu0 = rho * g * h0 * (l0m / u0m) * 100.
         mu0 = rho * g * h0 * (l0m / u0m)
-        mu_n_gl = muraw_gl / mu0
         mu_n_bd = bd_mu_raw / mu0
+        u_n_bd = (bd_u_raw - u_mean) / u_range 
+        v_n_bd = (bd_v_raw - v_mean) / v_range 
 
     # gathering all the data information
     data_info = [data_mean, data_range, data_norm, data_raw, idxval_all, dsize_all]
@@ -187,7 +180,7 @@ def normalize_data(data,basal=False):
         U_star.append(s_n)
 
     if basal:
-        boundary_star = [u_n_gl, v_n_gl, mu_n_bd, x_n_walls, y_n_walls, u_n_walls, v_n_walls]
+        boundary_star = [u_n_bd, v_n_bd, mu_n_bd]
 
     if basal:
         return X_star, U_star, X_ct, nnct, data_info, boundary_star

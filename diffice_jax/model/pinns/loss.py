@@ -44,10 +44,8 @@ def loss_iso_create(predf, eqn_all, scale, lw, basal=False):
         x_col = data['col'][0]
         x_bd = data['bd'][0]
         if basal:
-            # u_bd = data['bd'][1]
+            u_bd = data['bd'][1]
             mu_bd = data['bd'][2]
-            # x_wall = data['wall'][0]
-            # u_wall = data['wall'][1]
         else:
             nn_bd = data['bd'][1]
 
@@ -59,19 +57,16 @@ def loss_iso_create(predf, eqn_all, scale, lw, basal=False):
 
         f_pred, term = gov_eqn(net, x_col, scale, basal=basal)
         if basal:
-            # gl_pred = net(x_bd)
-            mu_bd_pred = net(x_bd)[:,4:5].flatten()
-            # u_bd_pred = jnp.hstack((gl_pred[:, 0:1], gl_pred[:, 1:2]))
-            # mu_bd_pred = gl_pred[:, 4:5].flatten()
+            gl_pred = net(x_bd)
+            # mu_bd_pred = net(x_bd)[:,4:5].flatten()
+            u_bd_pred = jnp.hstack((gl_pred[:, 0:1], gl_pred[:, 1:2]))
+            mu_bd_pred = gl_pred[:, 4:5].flatten()
             mu_bd_err = ms_error(jnp.log(mu_bd_pred) - jnp.log(mu_bd))
-            # u_bd_err = ms_error(u_bd_pred - u_bd)]
-            bd_err = jnp.hstack(([0, 0], mu_bd_err))
+            u_bd_err = ms_error(u_bd_pred - u_bd)
+            bd_err = jnp.hstack((u_bd_err, mu_bd_err))
         else:
             f_bd, term_bd = front_eqn(net, x_bd, nn_bd, scale)
 
-        # if basal: 
-        #     u_wall_pred = net(x_wall)[:,0:2]
-        #     u_wall_err = ms_error(u_wall_pred - u_wall)
 
         # calculate the mean squared root error of normalization cond.
         data_u_err = ms_error(u_pred - u_smp)
@@ -89,12 +84,12 @@ def loss_iso_create(predf, eqn_all, scale, lw, basal=False):
             # e1_err = ma_error(f_pred[:,0:1] - f_pred[:,1:2])
             # e2_err = ma_error(f_pred[:,2:3] - f_pred[:,3:4])
             # eqn_err = jnp.hstack([e1_err, e2_err])
-            eqn_err = ma_error(f_pred)
-            visc_1 = term[:, 9:10]
-            grav_basal_1 = term[:, 10:11]
-            visc_2 = term[:, 11:12]
-            grav_basal_2 = term[:, 12:13]
-            mag_err = jnp.hstack([ms_error(jnp.abs(visc_1) - jnp.abs(grav_basal_1)), ms_error(jnp.abs(visc_2)-jnp.abs(grav_basal_2))])
+            eqn_err = ms_error(f_pred)
+            # visc_1 = term[:, 9:10]
+            # grav_basal_1 = term[:, 10:11]
+            # visc_2 = term[:, 11:12]
+            # grav_basal_2 = term[:, 12:13]
+            # mag_err = jnp.hstack([ms_error(jnp.abs(visc_1) - jnp.abs(grav_basal_1)), ms_error(jnp.abs(visc_2)-jnp.abs(grav_basal_2))])
         else:
             eqn_err = ms_error(f_pred)
         # calculate the mean squared root error of boundary condition
@@ -120,13 +115,9 @@ def loss_iso_create(predf, eqn_all, scale, lw, basal=False):
         # calculate the overall data loss and equation loss
         loss_data = jnp.sum(data_err * data_weight)
         loss_eqn = jnp.sum(eqn_err * eqn_weight)
-        if basal:
-            loss_mag = jnp.sum(mag_err * mag_weight)
-        loss_bd = jnp.sum(bd_err * bd_weight)
         # if basal:
-        #     loss_wall = jnp.sum(u_wall_err)
-        # else:
-        #     loss_wall = 0
+        #     loss_mag = jnp.sum(mag_err * mag_weight)
+        loss_bd = jnp.sum(bd_err * bd_weight)
 
         # load the loss_ref
         loss_ref = loss_fun.lref
@@ -134,7 +125,7 @@ def loss_iso_create(predf, eqn_all, scale, lw, basal=False):
         # # group the loss of all conditions and equations
         # loss = (lw[0]*loss_data + lw[1]*loss_eqn + lw[2]*loss_mag + lw[3]*loss_bd) / loss_ref
         loss = (lw[0]*loss_data + lw[1]*loss_eqn + lw[3]*loss_bd) / loss_ref
-        loss_info = jnp.hstack([jnp.array([loss, loss_data, loss_eqn, loss_bd, 0, loss_mag]),
+        loss_info = jnp.hstack([jnp.array([loss, loss_data, loss_eqn, loss_bd, 0, 0]),
                                 data_err, eqn_err, bd_err, 0])
         
         return loss, loss_info

@@ -67,7 +67,8 @@ def loss_iso_create(predf, eqn_all, scale, lw, basal=False):
             mu_bd_pred = gl_pred[:, 4:5].flatten()
             mu_bd_err = ms_error(jnp.log(mu_bd_pred) - jnp.log(mu_bd))
             u_bd_err = ms_error(u_bd_pred - u_bd)
-            bd_err = jnp.hstack((u_bd_err, mu_bd_err))
+            eqn_bd_err = ms_error(f_pred_bd)
+            bd_err = jnp.hstack((u_bd_err, mu_bd_err, eqn_bd_err))
         else:
             f_bd, term_bd = front_eqn(net, x_bd, nn_bd, scale)
 
@@ -89,7 +90,7 @@ def loss_iso_create(predf, eqn_all, scale, lw, basal=False):
             # e1_err = ma_error(f_pred[:,0:1] - f_pred[:,1:2])
             # e2_err = ma_error(f_pred[:,2:3] - f_pred[:,3:4])
             # eqn_err = jnp.hstack([e1_err, e2_err])
-            eqn_err = ms_error(f_pred) + ms_error(f_pred_bd)
+            eqn_err = ms_error(f_pred)
             # visc_1 = term[:, 9:10]
             # grav_basal_1 = term[:, 10:11]
             # visc_2 = term[:, 11:12]
@@ -113,7 +114,7 @@ def loss_iso_create(predf, eqn_all, scale, lw, basal=False):
             mag_weight = jnp.array([1., 1.])
 
         if basal:
-            bd_weight = jnp.array([1., 1., 1.])
+            bd_weight = jnp.array([1., 1., 1., 0.5, 0.5])
         else:
             bd_weight = jnp.array([1., 1.])
 

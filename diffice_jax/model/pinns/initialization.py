@@ -35,10 +35,10 @@ def init_nets(parent_key, n_hl, n_unit, aniso=False, basal=False):
     # set the neural network shape for u, v, h, and s
     layers1 = [2] + n_hl * [n_unit] + [4 if basal else 3]
     # set the neural network shape for mu
-    layers2 = [2] + n_hl * [n_unit] + [n_mu+n_basal]
+    layers2 = [2] + n_hl * [n_unit] + [n_mu]
     # if inferring for basal friction, add another layer for C
-    # if basal:
-    #     layers3 = [2] + n_hl * [n_unit] + [n_basal]
+    if basal:
+        layers3 = [2] + n_hl * [n_unit] + [n_basal]
 
     if aniso and basal:
         print("Warning: Inferring basal friction with anisotropic visocsity, the inverse problem is underdetermined.")
@@ -48,8 +48,8 @@ def init_nets(parent_key, n_hl, n_unit, aniso=False, basal=False):
     # generate weights and biases for
     params_u = init_single_net(keys[0], layers1)
     params_mu = init_single_net(keys[0], layers2)
-    # if basal:
-    #     params_c = init_single_net(keys[0], layers3)
-    #     return [params_u, params_mu, params_c]
-    # else:
-    return [params_u, params_mu]
+    if basal:
+        params_c = init_single_net(keys[0], layers3)
+        return [params_u, params_mu, params_c]
+    else:
+        return [params_u, params_mu]

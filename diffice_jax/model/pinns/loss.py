@@ -59,6 +59,7 @@ def loss_iso_create(predf, eqn_all, scale, lw, basal=False):
             s_pred = net(xh_smp)[:, 3:4]
 
         f_pred, term = gov_eqn(net, x_col, scale, basal=basal)
+        f_pred_bd, _ = gov_eqn(net, x_bd, scale, basal=basal)
         if basal:
             gl_pred = net(x_bd)
             # mu_bd_pred = net(x_bd)[:,4:5].flatten()
@@ -88,7 +89,7 @@ def loss_iso_create(predf, eqn_all, scale, lw, basal=False):
             # e1_err = ma_error(f_pred[:,0:1] - f_pred[:,1:2])
             # e2_err = ma_error(f_pred[:,2:3] - f_pred[:,3:4])
             # eqn_err = jnp.hstack([e1_err, e2_err])
-            eqn_err = ms_error(f_pred)
+            eqn_err = ms_error(f_pred) + ms_error(f_pred_bd)
             # visc_1 = term[:, 9:10]
             # grav_basal_1 = term[:, 10:11]
             # visc_2 = term[:, 11:12]

@@ -35,10 +35,10 @@ def solu_create(scl=1, act_s=0,basal=False):
         # generate the NN
         uvh = neural_net(params[0], x, scl, act_s)
         mu = neural_net(params[1], x, scl, act_s)
-        # if basal:
-        #     c = neural_net(params[2], x, scl, act_s)
-        #     sol = jnp.hstack([uvh, jnp.exp(mu), jnp.exp(c)])
-        # else:
-        sol = jnp.hstack([uvh, jnp.exp(mu)])
+        if basal:
+            c = neural_net(params[2], x, scl, act_s)
+            sol = jnp.hstack([uvh, jnp.exp(mu), jnp.exp(c)])
+        else:
+            sol = jnp.hstack([uvh, jnp.exp(mu)])
         return sol
     return f

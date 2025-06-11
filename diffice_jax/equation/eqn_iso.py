@@ -103,10 +103,10 @@ def gov_eqn(net, x, scale, basal=False):
             # term12_2 *= 100
             ud = u*u0 + um
             vd = v*v0 + vm
-            veld = jnp.sqrt(ud**2 + vd**2)
+            # veld = jnp.sqrt(ud**2 + vd**2) + 1e-15
 
-            term1_4 = c * (ud / veld)
-            term2_4 = c * (vd / veld)
+            term1_4 = c * (ud / u0m)
+            term2_4 = c * (vd / u0m)
             term1_3 = h * s_x 
             term2_3 = h * s_y
         else:

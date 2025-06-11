@@ -33,8 +33,8 @@ def extract_scale(scale_info, basal=False):
         mu0 = rho * gd * h0 * (l0m / u0m)
 
     if basal:
-        # c0 = (h0 * mu0) / (100 * l0m**2)
-        c0 = (h0 * mu0 * u0m) / (l0m**2)
+        c0 = (h0 * mu0) / (l0m**2)
+        # c0 = (h0 * mu0 * u0m) / (l0m**2)
     else:
         c0 = jnp.nan
 

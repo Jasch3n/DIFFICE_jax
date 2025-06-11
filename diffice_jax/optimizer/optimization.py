@@ -145,7 +145,7 @@ def lbfgs_optimizer(lossf, params, data, epoch, basal=False):
     # train the model with L-BFGS solver
     results = tfp.optimizer.lbfgs_minimize(
         value_and_gradients_function=func_lbfgs, initial_position=init_params_1d,
-        tolerance=1e-10, max_iterations=max_nIter)
+        tolerance=1e-15, max_iterations=max_nIter)
     params = func_lbfgs.update(results.position)
     num_iter = results.num_objective_evaluations
     loss_all = func_lbfgs.loss

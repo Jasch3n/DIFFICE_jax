@@ -68,7 +68,7 @@ def loss_iso_create(predf, eqn_all, scale, lw, basal=False):
             mu_bd_err = ms_error(jnp.log(mu_bd_pred) - jnp.log(mu_bd))
             u_bd_err = ms_error(u_bd_pred - u_bd)
             # eqn_bd_err = ms_error(f_pred_bd)
-            bd_err = jnp.hstack(mu_bd_err)
+            bd_err = jnp.hstack((mu_bd_err))
         else:
             f_bd, term_bd = front_eqn(net, x_bd, nn_bd, scale)
 

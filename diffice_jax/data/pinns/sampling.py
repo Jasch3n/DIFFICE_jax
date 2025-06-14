@@ -21,7 +21,7 @@ def data_sample_create(data_all, n_pt,basal=False):
     n_bd = X_ct.shape[0]
 
     # define the function that can re-sampling for each calling
-    def dataf(key):
+    def dataf(key, eval_adaptive=False, adaptive_probs=None):
         # generate the new random key
         keys = random.split(key, 4)
 
@@ -38,10 +38,15 @@ def data_sample_create(data_all, n_pt,basal=False):
             S_smp = U_star[2][idxh_smp]
 
         # generate a random sample of collocation point within the domain
-        idx_col = random.choice(keys[2], jnp.arange(n_data), [n_pt[2]])
+        if adaptive_probs is None:
+            idx_col = random.choice(keys[2], jnp.arange(n_data), [n_pt[2]])
+        else:
+            idx_col = random.choice(keys[2], jnp.arange(n_data), [n_pt[2]], p=adaptive_probs)
         # sampling the data point based on the index
-        X_col = X_star[0][idx_col]
-        
+        if eval_adaptive:
+            X_col = X_star[0] 
+        else:
+            X_col = X_star[0][idx_col]
         # generate a random index of the data at ice front
         idx_cbd = random.choice(keys[3], jnp.arange(n_bd), [n_pt[3]])
         # sampling the data point based on the index

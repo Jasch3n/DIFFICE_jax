@@ -5,11 +5,16 @@
 import sys
 import jax.numpy as jnp
 import optax
-from jax import random, jit, grad
+from jax import random, jit, grad, debug
 import jax.flatten_util as flat_utl
 from jax.debug import callback as call
 from tensorflow_probability.substrates import jax as tfp
 import functools
+
+def calc_eqn_err(lossf, params, x):
+    """Used for adaptive sampling."""
+    _, loss_info = lossf(params, x)
+    return loss_info[1]
 
 # create the Adam minimizer
 @functools.partial(jit, static_argnames=("lossf", "opt"))
@@ -21,7 +26,7 @@ def adam_minimizer(lossf, params, data, opt, opt_state):
     return new_params, loss_info, opt_state
 
 
-def adam_optimizer(key, lossf, params, dataf, epoch, lr=1e-3, aniso=False, schdul=None, basal=False):
+def adam_optimizer(key, lossf, params, dataf, epoch, lr=1e-3, aniso=False, schdul=None, basal=False, adaptive=False, adapt_period=500):
     """using the adam optimizer for the training.
 
     Args:
@@ -52,20 +57,46 @@ def adam_optimizer(key, lossf, params, dataf, epoch, lr=1e-3, aniso=False, schdu
     # pre-allocate the loss variable
     loss_all = []
     nc = jnp.int32(jnp.round(epoch / 5))
+    if adaptive:
+        x_col_tmp = None
+        adapted = False
     # start the training iteration
     for step in range(epoch):
+        # hard coded adaptive sampling every 500 epochs
+        adapt_sample = (step+1)%adapt_period==0 and (step+1)>(0.1*epoch) and adaptive
+
+        # Turn on RAD adaptive sampling
+        if adapt_sample:
+            data = dataf(key, eval_adaptive=True)
+            eqn_err = calc_eqn_err(lossf, params, data)
+            eqn_err = jnp.sum(jnp.square(eqn_err), axis=1)
+            probs = eqn_err/jnp.mean(eqn_err) + 1
+            probs /= jnp.sum(probs)
+            print(f"epoch {step+1}, adapting sample based on residue")
+            adapted=True
+
         # split the new key for randomization
         key = random.split(key, 1)[0]
+
         # re-sampling the data points
-        data = dataf(key)
+        if adapt_sample:
+            data = dataf(key, adaptive_probs=probs)
+            x_col_tmp = data['col'][0]
+        if not adapt_sample and adaptive and adapted:
+            data = dataf(key)
+            data['col'][0] = x_col_tmp
+        else:
+            data = dataf(key)
+        # print(data['col'][0][0:10])
+        
         # minimize the loss function using Adam
         params, loss_info, opt_state = adam_minimizer(lossf, params, data, opt_Adam, opt_state)
         # print the loss for every 100 iteration
         if (step+1) % 50 == 0:
             # print the results
             if basal:
-                print(f"Step:{step+1} | Loss:{loss_info[0]:.4e} | d:{loss_info[1]:.4e} | eq:{loss_info[2]:.4e} | "
-                f"b:{loss_info[3]:.4e} | logdata:{loss_info[4]:.4e}", file=sys.stderr)
+                print(f"Step:{step+1} | Loss:{loss_info[0][0]:.4e} | d:{loss_info[0][1]:.4e} | eq:{loss_info[0][2]:.4e} | "
+                f"b:{loss_info[0][3]:.4e} | logdata:{loss_info[0][4]:.4e}", file=sys.stderr)
             else:
                 print(f"Step: {step+1} | Loss: {loss_info[0]:.4e} | Loss_d: {loss_info[1]:.4e} |"
                 f" Loss_e: {loss_info[2]:.4e} | Loss_b: {loss_info[3]:.4e}", file=sys.stderr)
@@ -74,8 +105,9 @@ def adam_optimizer(key, lossf, params, dataf, epoch, lr=1e-3, aniso=False, schdu
                 # modify the wsp value over the iteration
                 lossf.wsp = wsp0 * schdul(step+1)
 
+        
         # saving the loss
-        loss_all.append(loss_info[0:(5 if basal else 4)])
+        loss_all.append(loss_info[0][0:(5 if basal else 4)])
 
     # obtain the total loss in the last iterations
     lossend = jnp.array(loss_all[-nc:])[:, 0]
@@ -91,9 +123,9 @@ def adam_optimizer(key, lossf, params, dataf, epoch, lr=1e-3, aniso=False, schdu
         data = dataf(key)
         # minimize the loss function using Adam
         params, loss_info, opt_state = adam_minimizer(lossf, params, data, opt_Adam, opt_state)
-        llast = loss_info[0]
+        llast = loss_info[0][0]
         # saving the loss
-        loss_all.append(loss_info[0:(5 if basal else 4)])
+        loss_all.append(loss_info[0][0:(5 if basal else 4)])
 
     return params, loss_all
 
@@ -117,13 +149,13 @@ def lbfgs_function(lossf, init_params, data, basal=False):
         grads, loss_info = grad(lossf, has_aux=True)(params, data)
         # convert the grad to 1d arrays
         grads_1d = flat_utl.ravel_pytree(grads)[0]
-        loss_value = loss_info[0]
+        loss_value = loss_info[0][0]
 
         # # store loss value so we can retrieve later
         call(lambda x: f.loss.append(x), loss_info[0:(5 if basal else 4)])
         if basal:
             call(lambda x: print(f"Step:NaN | Loss:{x[0]:.4e} | d:{x[1]:.4e} | eq:{x[2]:.4e} | "
-            f"b:{x[3]:.4e} | mag:{x[5]:.4e}", file=sys.stderr), loss_info)
+            f"b:{x[3]:.4e} | mag:{x[5]:.4e}", file=sys.stderr), loss_info[0])
         else:
             call(lambda x: print(f"Step:NaN | Loss: {x[0]:.4e} | Loss_d: {x[1]:.4e} |"
             f" Loss_e: {x[2]:.4e} | Loss_b: {x[3]:.4e}", file=sys.stderr), loss_info)

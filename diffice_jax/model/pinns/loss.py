@@ -11,7 +11,6 @@ def ma_error(diff):
 def u_mag(u):
     return jnp.sqrt(jnp.sum(jnp.square(u), 1)) 
 
-
 #%% loss for inferring isotropic viscosity
 
 def loss_iso_create(predf, eqn_all, scale, lw, basal=False):
@@ -68,7 +67,7 @@ def loss_iso_create(predf, eqn_all, scale, lw, basal=False):
             mu_bd_err = ms_error(jnp.log(mu_bd_pred) - jnp.log(mu_bd))
             u_bd_err = ms_error(u_bd_pred - u_bd)
             # eqn_bd_err = ms_error(f_pred_bd)
-            bd_err = jnp.hstack((mu_bd_err))
+            bd_err = mu_bd_err
         else:
             f_bd, term_bd = front_eqn(net, x_bd, nn_bd, scale)
 
@@ -136,8 +135,8 @@ def loss_iso_create(predf, eqn_all, scale, lw, basal=False):
         # # group the loss of all conditions and equations
         # loss = (lw[0]*loss_data + lw[1]*loss_eqn + lw[2]*loss_mag + lw[3]*loss_bd) / loss_ref
         loss = (lw[0]*loss_data + lw[1]*loss_eqn + lw[3]*loss_bd) / loss_ref
-        loss_info = jnp.hstack([jnp.array([loss, loss_data, loss_eqn, loss_bd, data_log_u_err, 0]),
-                                data_err, eqn_err, bd_err, 0])
+        loss_info = [jnp.hstack([jnp.array([loss, loss_data, loss_eqn, loss_bd, data_log_u_err, 0]),
+                                data_err, eqn_err, bd_err, 0]), f_pred]
         
         return loss, loss_info
 

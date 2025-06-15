@@ -5,7 +5,7 @@
 import sys
 import jax.numpy as jnp
 import optax
-from jax import random, jit, grad, debug
+from jax import random, jit, grad, debug, lax
 import jax.flatten_util as flat_utl
 from jax.debug import callback as call
 from tensorflow_probability.substrates import jax as tfp
@@ -13,7 +13,7 @@ import functools
 
 def calc_eqn_err(lossf, params, x):
     """Used for adaptive sampling."""
-    _, loss_info = lossf(params, x)
+    _, loss_info = lax.stop_gradient(lossf(params, x))
     return loss_info[1]
 
 # create the Adam minimizer

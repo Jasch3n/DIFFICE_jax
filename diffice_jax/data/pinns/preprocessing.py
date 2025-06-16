@@ -37,7 +37,7 @@ def normalize_data(data,basal=False):
     xct = data['xct']    # unit [m] position
     yct = data['yct']    # unit [m] position
     if basal:
-        print("Basal. NO nnct")
+        # print("Basal. NO nnct")
         nnct=None
     else:
         nnct = data['nnct']  # unit vector

@@ -92,7 +92,7 @@ def adam_optimizer(key, lossf, params, dataf, epoch, lr=1e-3, aniso=False, schdu
         # minimize the loss function using Adam
         params, loss_info, opt_state = adam_minimizer(lossf, params, data, opt_Adam, opt_state)
         # print the loss for every 100 iteration
-        if (step+1) % 50 == 0:
+        if (step+1) % 100 == 0:
             # print the results
             if basal:
                 print(f"Step:{step+1} | Loss:{loss_info[0][0]:.4e} | d:{loss_info[0][1]:.4e} | eq:{loss_info[0][2]:.4e} | "
@@ -152,7 +152,7 @@ def lbfgs_function(lossf, init_params, data, basal=False):
         loss_value = loss_info[0][0]
 
         # # store loss value so we can retrieve later
-        call(lambda x: f.loss.append(x), loss_info[0:(5 if basal else 4)])
+        call(lambda x: f.loss.append(x), loss_info[0][0:(5 if basal else 4)])
         if basal:
             call(lambda x: print(f"Step:NaN | Loss:{x[0]:.4e} | d:{x[1]:.4e} | eq:{x[2]:.4e} | "
             f"b:{x[3]:.4e} | mag:{x[5]:.4e}", file=sys.stderr), loss_info[0])

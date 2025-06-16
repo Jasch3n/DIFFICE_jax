@@ -21,7 +21,7 @@ def data_sample_create(data_all, n_pt,basal=False):
     n_bd = X_ct.shape[0]
 
     # define the function that can re-sampling for each calling
-    def dataf(key, eval_adaptive=False, adaptive_probs=None):
+    def dataf(key, eval_adaptive=False, adaptive_probs=None, mix_adaptive=False):
         # generate the new random key
         keys = random.split(key, 4)
 
@@ -40,8 +40,13 @@ def data_sample_create(data_all, n_pt,basal=False):
         # generate a random sample of collocation point within the domain
         if adaptive_probs is None:
             idx_col = random.choice(keys[2], jnp.arange(n_data), [n_pt[2]])
+        elif (not adaptive_probs is None) and mix_adaptive:
+            idx_col_1 = random.choice(keys[2], jnp.arange(n_data), [n_pt[2]])
+            idx_col_2 = random.choice(keys[2], jnp.arange(n_data), [n_pt[2]], p=adaptive_probs)
+            idx_col = jnp.concatenate((idx_col_1, idx_col_2), axis=0)
         else:
             idx_col = random.choice(keys[2], jnp.arange(n_data), [n_pt[2]], p=adaptive_probs)
+            
         # sampling the data point based on the index
         if eval_adaptive:
             X_col = X_star[0] 

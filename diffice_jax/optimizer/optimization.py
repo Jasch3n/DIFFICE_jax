@@ -16,6 +16,14 @@ def calc_eqn_err(lossf, params, x):
     _, loss_info = lax.stop_gradient(lossf(params, x))
     return loss_info[1]
 
+def eval_RAD_probs(key, params, dataf, lossf):
+    data = dataf(key, eval_adaptive=True)
+    eqn_err = calc_eqn_err(lossf, params, data)
+    eqn_err = jnp.sum(jnp.square(eqn_err), axis=1)
+    probs = eqn_err/jnp.mean(eqn_err) + 1 
+    probs /= jnp.sum(probs)
+    return probs 
+
 # create the Adam minimizer
 @functools.partial(jit, static_argnames=("lossf", "opt"))
 def adam_minimizer(lossf, params, data, opt, opt_state):
@@ -65,13 +73,9 @@ def adam_optimizer(key, lossf, params, dataf, epoch, lr=1e-3, aniso=False, schdu
         # hard coded adaptive sampling every 500 epochs
         adapt_sample = (step+1)%adapt_period==0 and (step+1)>(0.1*epoch) and adaptive
 
-        # Turn on RAD adaptive sampling
+        # Evaluate RAD pdf for adaptive sampling
         if adapt_sample:
-            data = dataf(key, eval_adaptive=True)
-            eqn_err = calc_eqn_err(lossf, params, data)
-            eqn_err = jnp.sum(jnp.square(eqn_err), axis=1)
-            probs = eqn_err/jnp.mean(eqn_err) + 1
-            probs /= jnp.sum(probs)
+            probs = eval_RAD_probs(key, params, dataf, lossf)
             print(f"epoch {step+1}, adapting sample based on residue")
             adapted=True
 
@@ -81,13 +85,14 @@ def adam_optimizer(key, lossf, params, dataf, epoch, lr=1e-3, aniso=False, schdu
         # re-sampling the data points
         if adapt_sample:
             data = dataf(key, adaptive_probs=probs)
+            # Store the adaptively sampled collocation points in a tmp variable 
+            # to keep it unchanged for adapt_period epochs
             x_col_tmp = data['col'][0]
         if not adapt_sample and adaptive and adapted:
             data = dataf(key)
             data['col'][0] = x_col_tmp
         else:
             data = dataf(key)
-        # print(data['col'][0][0:10])
         
         # minimize the loss function using Adam
         params, loss_info, opt_state = adam_minimizer(lossf, params, data, opt_Adam, opt_state)
@@ -126,8 +131,11 @@ def adam_optimizer(key, lossf, params, dataf, epoch, lr=1e-3, aniso=False, schdu
         llast = loss_info[0][0]
         # saving the loss
         loss_all.append(loss_info[0][0:(5 if basal else 4)])
-
-    return params, loss_all
+    if adaptive:
+        probs_last = eval_RAD_probs(key, params, dataf, lossf)
+        return params, loss_all, probs_last 
+    else:
+        return params, loss_all
 
 
 # A factory to create a function required by tfp.optimizer.lbfgs_minimize.

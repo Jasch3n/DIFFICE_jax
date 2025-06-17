@@ -42,11 +42,11 @@ def data_sample_create(data_all, n_pt,basal=False):
             idx_col = random.choice(keys[2], jnp.arange(n_data), [n_pt[2]])
         elif (not adaptive_probs is None) and mix_adaptive:
             idx_col_1 = random.choice(keys[2], jnp.arange(n_data), [n_pt[2]])
-            idx_col_2 = random.choice(keys[2], jnp.arange(n_data), [n_pt[2]], p=adaptive_probs)
+            idx_col_2 = random.choice(keys[2], jnp.arange(n_data), [n_pt[4]], p=adaptive_probs)
             idx_col = jnp.concatenate((idx_col_1, idx_col_2), axis=0)
         else:
             idx_col = random.choice(keys[2], jnp.arange(n_data), [n_pt[2]], p=adaptive_probs)
-            
+
         # sampling the data point based on the index
         if eval_adaptive:
             X_col = X_star[0] 

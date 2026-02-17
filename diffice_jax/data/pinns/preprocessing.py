@@ -80,10 +80,7 @@ def normalize_data(data,basal=False):
     h = h0[idxval_h, None]
     if basal:
         s = s0[idxval_h, None]
-
-    # remove invalid values in boundary data 
-    debug.print(str(jnp.shape(xct)))
-    debug.print(str(jnp.shape(yct)))
+    
     if basal:
         idxval_bd = jnp.where(~np.isnan(bd_mu_raw) & ~np.isinf(bd_mu_raw))[0]
         bd_mu_raw = bd_mu_raw[idxval_bd, None].flatten()

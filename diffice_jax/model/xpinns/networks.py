@@ -2,6 +2,7 @@ import sys
 import jax.numpy as jnp
 from jax import lax
 from pathlib import Path
+import jax.debug as jdb
 
 project_root = Path(__file__).parent.parent.parent
 sys.path.append(str(project_root))
@@ -33,16 +34,28 @@ def neural_net(params, x, scl, act_s=0):
 
 
 # wrapper to create solution function with given domain size
-def solu_create(scale, scl=1, act_s=0):
+def solu_create(scale, scl=1, act_s=0, basal_mask=None):
     '''
     :param limit: domain size of the input
     :return: function of the solution (a callable)
     '''
+    # create default basal mask if not provided (all floating)
+    if basal_mask is None:
+        ng = len(scale)
+        basal_mask = [False] * ng
+
     def f(params, x, idx):
         # generate the NN
         uvh = neural_net(params['net_u'][idx], x, scl, act_s)
         mu = neural_net(params['net_mu'][idx], x, scl, act_s)
-        sol = jnp.hstack([uvh, jnp.exp(mu)])
+        
+        if basal_mask[idx]:
+            # jdb.print('......Doing forward calculation for a grounded region. regionIdx={x}', x=idx)
+            c = neural_net(params['net_c'][idx], x, scl, act_s)
+            sol = jnp.hstack([uvh, jnp.exp(mu), jnp.exp(c)])
+        else:
+            # jdb.print('......Doing forward calculation for a floating region. regionIdx={x}', x=idx)
+            sol = jnp.hstack([uvh, jnp.exp(mu)])
         return sol
 
     def gradf(params, x, idx):

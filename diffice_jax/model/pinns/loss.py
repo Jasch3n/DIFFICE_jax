@@ -79,6 +79,7 @@ def loss_iso_create(predf, eqn_all, scale, lw, basal=False):
             data_s_err = ms_error(s_pred - s_smp)
             eps = 1e-7
             data_log_u_err = ms_error( jnp.log( (u_mag(u_pred)+eps) / (u_mag(u_smp)+eps) ))
+
         if basal:
             data_err = jnp.hstack((data_u_err, data_h_err, data_s_err))
         else:
@@ -134,10 +135,16 @@ def loss_iso_create(predf, eqn_all, scale, lw, basal=False):
         # calculate the total loss
         # # group the loss of all conditions and equations
         # loss = (lw[0]*loss_data + lw[1]*loss_eqn + lw[2]*loss_mag + lw[3]*loss_bd) / loss_ref
-        loss = (lw[0]*loss_data + lw[1]*loss_eqn + lw[3]*loss_bd) / loss_ref
-        loss_info = [jnp.hstack([jnp.array([loss, loss_data, loss_eqn, loss_bd, data_log_u_err, 0]),
-                                data_err, eqn_err, bd_err, 0]), f_pred]
-        
+        if basal:
+            loss = (lw[0]*loss_data + lw[1]*loss_eqn + lw[2]*loss_bd) / loss_ref
+            loss_info = [jnp.hstack([jnp.array([loss, loss_data, loss_eqn, loss_bd, data_log_u_err, 0]),
+                                    data_err, eqn_err, bd_err, 0]), f_pred]
+        elif not basal: # assume domain is all floating
+            loss = (lw[0]*loss_data + lw[1]*loss_eqn + lw[2]*loss_bd) / loss_ref
+            # group the loss of all conditions and equations
+            loss_info = [jnp.hstack([jnp.array([loss, loss_data, loss_eqn, loss_bd]),
+                                    data_err, eqn_err, bd_err]), f_pred]
+            
         return loss, loss_info
 
     loss_fun.lref = 1.0

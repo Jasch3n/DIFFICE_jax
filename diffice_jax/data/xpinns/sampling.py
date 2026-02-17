@@ -16,8 +16,63 @@ def data_sample_create(data_all, idxgall, n_pt):
     # load the data at the ice front
     X_ct = tree_map(lambda x: data_all[x][2], idxgall)
     nn_ct = tree_map(lambda x: data_all[x][3], idxgall)
+    
+    # load the boundary data for basal inversion
+    # returns [mu_bd] or None
+    def get_boundary_star(d):
+        if len(d) > 6:
+            return d[6]
+        else:
+            return None
+
+    boundary_star = tree_map(lambda x: get_boundary_star(data_all[x]), idxgall)
+    
+    # Normalize n_pt to be list of lists (or arrays) matching subregions
+    # n_pt structure: [vel, thick, col, boundary, interface, (adapt)]
+    # Ensure each is a list of length ng (or ng-1 for interface)
+    n_pt_norm = []
+    # indices 0 (vel), 1 (thick), 2 (col), 3 (bd), 4 (interface), 5 (adapt)
+    # mapping to expected lengths: 
+    # 0,1,2,3,5 -> ng
+    # 4 -> ng-1 (if ng > 1)
+    
+    expected_lens = [ng, ng, ng, ng, max(ng-1, 1), ng] 
+    # n_pt input might be array or list.
+    # We will convert to valid list of lists.
+    
+    for k in range(len(n_pt)):
+        val = n_pt[k]
+        exp_len = expected_lens[k] if k < len(expected_lens) else ng
+        
+        # Check if scalar
+        if hasattr(val, 'ndim') and val.ndim == 0:
+            # JAX scalar or numpy scalar
+            val_list = [int(val)] * exp_len
+        elif isinstance(val, (int, float)):
+             val_list = [int(val)] * exp_len
+        elif isinstance(val, (list, tuple)) or (hasattr(val, 'ndim') and val.ndim > 0):
+            # It's iterable
+             if len(val) == 1:
+                 val_list = [int(val[0])] * exp_len
+             else:
+                 val_list = [int(v) for v in val]
+                 # Ideally check len(val_list) == exp_len
+        else:
+             val_list = [int(val)] * exp_len
+        
+        # Special handling for interface (index 4) if ng=1 (empty list expected or dummy?)
+        # code uses idxgall[0:-1]. If ng=1, this is empty.
+        # tree_map will loop over empty lists. So n_pt[4] length doesn't matter much if empty.
+        # But if ng > 1, we need it to match.
+        
+        n_pt_norm.append(val_list)
+    
+    n_pt = n_pt_norm # Override n_pt with normalized version
+
     # load the data at the sub-region boundary
-    Xraw_md = tree_map(lambda x: data_all[x][-1], idxgall)
+    # X_md is always at index 5 in the normalize_each output tuple
+    # (index -1 may be boundary_star for basal regions)
+    Xraw_md = tree_map(lambda x: data_all[x][5], idxgall)
     X_md = Xraw_md[0:-1]
     n_md = [jnp.array(1.)] * (ng-1)
     # load the data at the connect
@@ -41,43 +96,118 @@ def data_sample_create(data_all, idxgall, n_pt):
     # create the index of thickness data points within all sub-regions
     idxh_data = tree_map(lambda x: jnp.arange(X_star[x][1].shape[0]), idxgall)
     # create the index of data points for all sub-regions at the calving front
-    idx_bd = tree_map(lambda x: jnp.arange(X_ct[x].shape[0]), idxgall)
+    # For grounded regions with no calving front, X_ct has shape (0, 2), yielding an empty index
+    idx_bd = tree_map(lambda x: jnp.arange(max(X_ct[x].shape[0], 1)), idxgall)
     # create the index of data points at the interface between different pairs of sub-regions
     idx_md = tree_map(lambda x: jnp.arange(X_md[x].shape[0]), idxgall[0:-1])
 
     # define the function that can re-sampling for each calling
-    def dataf(key):
+    def dataf(key, eval_adaptive=None, adaptive_probs=None, mix_adaptive=False):
         # generate the new random key
         _, *keys = random.split(key, 4*ng)
 
         # sampling the velocity data point based on the index
-        idx_smp = tree_map(lambda x, y: random.choice(x, y, [n_pt[0]], replace=False), keys[0:ng], idx_data)
+        idx_smp = tree_map(lambda x, y, n: random.choice(x, y, [n], replace=False), keys[0:ng], idx_data, n_pt[0])
         X_smp = tree_map(lambda x, y: X_star[x][0][y], idxgall, idx_smp)
         U_smp = tree_map(lambda x, y: U_star[x][0][y], idxgall, idx_smp)
 
         # sampling the thickness data point based on the index
-        idxh_smp = tree_map(lambda x, y: random.choice(x, y, [n_pt[1]], replace=False), keys[0:ng], idxh_data)
+        idxh_smp = tree_map(lambda x, y, n: random.choice(x, y, [n], replace=False), keys[0:ng], idxh_data, n_pt[1])
         Xh_smp = tree_map(lambda x, y: X_star[x][1][y], idxgall, idxh_smp)
         H_smp = tree_map(lambda x, y: U_star[x][1][y], idxgall, idxh_smp)
 
+        # sampling the surface elevation data for basal regions (same indices as thickness)
+        # U_star[x] has 3 elements [uv, h, s] for basal, 2 [uv, h] for floating
+        def sample_s(x, idx):
+            if len(U_star[x]) > 2:
+                return U_star[x][2][idx]
+            return None
+        S_smp = tree_map(lambda x, y: sample_s(x, y), idxgall, idxh_smp)
+
         # generate a random sample of collocation point within the domain
-        idx_col = tree_map(lambda x, y: random.choice(x, y, [n_pt[2]], replace=False), keys[ng:(2*ng)], idx_data)
+        # Check if eval_adaptive is enabled (globally or per subregion)
+        # If eval_adaptive=True (global), we return full grids for all regions (for RAD eval).
+        # If eval_adaptive is a list/dict, check per region.
+        
+        # Helper to decide sampling strategy for a region
+        def sample_col(key, region_idx, region_indices, n_c, n_a):
+            is_eval = False
+            probs = None
+            
+            # Check eval_adaptive
+            if isinstance(eval_adaptive, bool) and eval_adaptive:
+                is_eval = True
+            elif isinstance(eval_adaptive, (list, dict)):
+                is_eval = eval_adaptive[region_idx]
+            
+            # Check adaptive_probs
+            if isinstance(adaptive_probs, (list, dict)):
+                probs = adaptive_probs[region_idx]
+
+            if is_eval:
+                return region_indices
+            
+            elif probs is not None:
+                # Adaptive sampling
+                if mix_adaptive:
+                    # Mix uniform and adaptive
+                    idx_1 = random.choice(key, region_indices, [n_c], replace=False)
+                    # Adaptive part - usually with replacement if using weights
+                    idx_2 = random.choice(key, region_indices, [n_a], p=probs, replace=True) 
+                    return jnp.concatenate((idx_1, idx_2), axis=0)
+                else:
+                    # Pure adaptive
+                    return random.choice(key, region_indices, [n_c], p=probs, replace=True)
+            else:
+                # Uniform sampling
+                return random.choice(key, region_indices, [n_c], replace=False)
+
+        # Apply sampling per region
+        # Pass n_pt[2] (collocation counts) and n_pt[5] (adapt counts if exists)
+        n_a_list = n_pt[5] if len(n_pt) > 5 else [0]*ng
+        idx_col = tree_map(lambda k, i, indices, n_c, n_a: sample_col(k, i, indices, n_c, n_a), 
+                           keys[ng:(2*ng)], 
+                           idxgall, 
+                           idx_data,
+                           n_pt[2],
+                           n_a_list)
+
+
         # sampling the collocation point based on the position of velocity data
         X_col = tree_map(lambda x, y: X_star[x][0][y], idxgall, idx_col)
 
         # generate a random index of the data at ice front
-        idx_cbd = tree_map(lambda x, y: random.choice(x, y, [n_pt[3]], replace=False), keys[(2*ng):(3*ng)], idx_bd)
+        # Use replace=True to handle grounded regions with fewer boundary points than requested
+        idx_cbd = tree_map(lambda x, y, n: random.choice(x, y, [n], replace=True), keys[(2*ng):(3*ng)], idx_bd, n_pt[3])
         # sampling the data point based on the index
-        X_bd = tree_map(lambda x, y: X_ct[x][y], idxgall, idx_cbd)
-        nn_bd = tree_map(lambda x, y: nn_ct[x][y], idxgall, idx_cbd)
+        # For regions with empty boundary data (grounded), create zero-filled placeholders
+        def safe_bd_sample(xct, idx, n):
+            if xct.shape[0] == 0:
+                return jnp.zeros((n, xct.shape[1]))
+            return xct[idx]
+        X_bd = tree_map(lambda x, y, n: safe_bd_sample(X_ct[x], y, n), idxgall, idx_cbd, n_pt[3])
+        def safe_nn_sample(nnct, idx, n):
+            if nnct.shape[0] == 0:
+                return jnp.zeros((n, nnct.shape[1]))
+            return nnct[idx]
+        nn_bd = tree_map(lambda x, y, n: safe_nn_sample(nn_ct[x], y, n), idxgall, idx_cbd, n_pt[3])
+
+        # sampling the boundary variable for basal inversion
+        def sample_boundary(b_star, idx):
+            if b_star is not None:
+                # b_star is [mu_bd], list of 1 element
+                mu_bd = b_star[0][idx]
+                return mu_bd
+            return None
+        mu_bd = tree_map(lambda x, y: sample_boundary(boundary_star[x], y), idxgall, idx_cbd)
 
         # generate a random index of the data at matching boundary
-        idx_mbd = tree_map(lambda x, y: random.choice(x, y, [n_pt[4]], replace=False), keys[(3*ng):(4*ng-1)], idx_md)
+        idx_mbd = tree_map(lambda x, y, n: random.choice(x, y, [n], replace=False), keys[(3*ng):(4*ng-1)], idx_md, n_pt[4])
         # sampling the data point based on the index
         X_mbd = tree_map(lambda x, y: X_md[x][y], idxgall[0:-1], idx_mbd)
 
         # group all the data and collocation points
-        data = dict(smp=[X_smp, U_smp, Xh_smp, H_smp], col=[X_col],  bd=[X_bd, nn_bd], md=[X_mbd])
+        data = dict(smp=[X_smp, U_smp, Xh_smp, H_smp, S_smp], col=[X_col],  bd=[X_bd, nn_bd, mu_bd], md=[X_mbd])
         return data
     return dataf
 

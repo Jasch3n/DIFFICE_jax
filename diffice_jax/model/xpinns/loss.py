@@ -1,11 +1,12 @@
 import jax.numpy as jnp
 from jax.tree_util import tree_map
 from jax import lax
+import jax.debug as jdb
 
 
 # define the mean squared error
 def ms_error(diff):
-    return jnp.mean(jnp.square(diff), axis=0)
+    return jnp.sum(jnp.square(diff), axis=0) / jnp.maximum(diff.shape[0], 1.0)
 
 
 # take the nth power root with original sign
@@ -13,11 +14,12 @@ def nthrt(x, n):
     return jnp.sign(x) * jnp.abs(x) ** (1/n)
 
 
-def sub_scale(scale):
+def sub_scale(scale, basal=False):
     # define the global parameter
     rho = 917
     rho_w = 1030
-    gd = 9.8 * (1 - rho / rho_w)  # gravitational acceleration
+    g = 9.8
+    gd = g * (1 - rho / rho_w)  # reduced gravitational acceleration
     # load the scale information
     dmean, drange = scale
     lx0, ly0, u0, v0 = drange[0:4]
@@ -26,16 +28,22 @@ def sub_scale(scale):
     u0m = lax.max(u0, v0)
     l0m = lax.max(lx0, ly0)
     # calculate the scale of viscosity and strain rate
-    mu0 = rho * gd * h0 * (l0m / u0m)
+    # Use full gravity for grounded ice (matching PINN behavior)
+    g_eff = g if basal else gd
+    mu0 = rho * g_eff * h0 * (l0m / u0m)
     du0 = u0m / l0m
     dh0 = h0 / l0m
     term0 = h0**2 / l0m
     return u0, v0, h0, mu0, du0, dh0, term0, um/u0, vm/v0
 
 
+def u_mag(u):
+    return jnp.sqrt(jnp.sum(jnp.square(u), 1))
+
+
 #%% loss for inferring isotropic viscosity
 
-def loss_iso_create(solNN, eqn_all, scale, idxgall, lw):
+def loss_iso_create(solNN, eqn_all, scale, idxgall, lw, basal_mask=None):
     ''' a function factory to create the loss function for isotropic analysis
     :param solNN: neural network function for solutions and its derivative [tuple(callable, callable)]
     :param eqn_all: include governing equation and boundary equation of SSA [tuple(callable, callable)]
@@ -46,9 +54,15 @@ def loss_iso_create(solNN, eqn_all, scale, idxgall, lw):
     predNN, gradNN = solNN
     # separate the governing equation and boundary conditions
     gov_eqn, front_eqn = eqn_all
+    
+    # create default basal mask if not provided (all floating)
+    if basal_mask is None:
+        ng = len(idxgall)
+        basal_mask = [False] * ng
 
     # obtain the viscosity and strain rate scale in each sub-region
-    all_info = jnp.array(tree_map(lambda x: sub_scale(scale[x]), idxgall))
+    # Pass basal flag per region so grounded regions use rho*g (not rho*gd)
+    all_info = jnp.array(tree_map(lambda x: sub_scale(scale[x], basal=basal_mask[x]), idxgall))
     scale_info = all_info[:, 0:7]
     scale_nm = scale_info / jnp.mean(scale_info, axis=0)   # To do: check whether jnp.min or jnp.mean better
     mean_nm = all_info[:, 7:]
@@ -58,8 +72,11 @@ def loss_iso_create(solNN, eqn_all, scale, idxgall, lw):
 
     # create the loss constraint for each sub-regions
     def loss_sub(params, data, idx):
+        is_basal = basal_mask[idx]
+
         # create the function for gradient calculation involves input Z only
         net = lambda z: predNN(params, z, idx)
+
         # load the velocity data and their position
         x_smp = data['smp'][0][idx]
         u_smp = data['smp'][1][idx]
@@ -68,36 +85,83 @@ def loss_iso_create(solNN, eqn_all, scale, idxgall, lw):
         xh_smp = data['smp'][2][idx]
         h_smp = data['smp'][3][idx]
 
-        # load the position and weight of collocation points
-        x_col = data['col'][0][idx]
-        x_bd = data['bd'][0][idx]
-        nn_bd = data['bd'][1][idx]
+        if is_basal:
+            s_smp = data['smp'][4][idx]
 
-        # calculate the gradient of phi at origin
+        # load the position of collocation points
+        x_col = data['col'][0][idx]
+
+        # load boundary data (only for floating subregions)
+        if not is_basal:
+            x_bd = data['bd'][0][idx]
+            nn_bd = data['bd'][1][idx]
+
+        # network predictions
         u_pred = net(x_smp)[:, 0:2]
         h_pred = net(xh_smp)[:, 2:3]
+        if is_basal:
+            s_pred = net(xh_smp)[:, 3:4]
 
-        # calculate the residue of equation
-        f_pred = gov_eqn(net, x_col, scale[idx])[0]
-        f_bd = front_eqn(net, x_bd, nn_bd, scale[idx])[0]
+        # equation residual
+        f_pred = gov_eqn(net, x_col, scale[idx], basal=is_basal)[0]
 
-        # calculate the mean squared error of normalization cond.
+        # data errors
         data_u_err = ms_error(u_pred - u_smp)
         data_h_err = ms_error(h_pred - h_smp)
-        data_err = jnp.hstack((data_u_err, data_h_err)) * uvh0[idx]
-        # calculate the mean squared error of equation
-        eqn_err = ms_error(f_pred) * term0[idx]
-        bd_err = ms_error(f_bd) * h0[idx]
-        # group all the error for output
-        err_all = jnp.hstack([data_err, eqn_err, bd_err])
-        return err_all
+
+        if is_basal:
+            data_s_err = ms_error(s_pred - s_smp)
+            eps = 1e-7
+            data_log_u_err = ms_error(jnp.log((u_mag(u_pred) + eps) / (u_mag(u_smp) + eps)))
+
+            # data_err: [u_err(2), h_err(1)] scaled, plus s_err and log_u_err
+            data_err = jnp.hstack((data_u_err, data_h_err)) * uvh0[idx]
+            s_err_weighted = data_s_err * h0[idx]
+            log_u_err_weighted = data_log_u_err * h0[idx]
+            data_err_all = jnp.hstack([data_err, s_err_weighted, log_u_err_weighted])  # (5,)
+
+            # equation error
+            eqn_err = ms_error(f_pred) * term0[idx]  # (2,)
+
+            # no boundary conditions for grounded regions
+            bd_err_vec = jnp.array([0.0, 0.0])  # (2,)
+
+            err_all = jnp.hstack([data_err_all, eqn_err, bd_err_vec])
+
+        else:
+            # floating case
+            data_err = jnp.hstack((data_u_err, data_h_err)) * uvh0[idx]  # (3,)
+            # pad s_err and log_u_err slots with 0 (not applicable for floating)
+            data_err_all = jnp.hstack([data_err, 0.0, 0.0])  # (5,)
+
+            # equation error
+            eqn_err = ms_error(f_pred) * term0[idx]  # (2,)
+
+            # calving front boundary error
+            f_bd = front_eqn(net, x_bd, nn_bd, scale[idx])[0]
+            bd_err = ms_error(f_bd) * h0[idx]  # (2,)
+
+            err_all = jnp.hstack([data_err_all, eqn_err, bd_err])
+
+        # err_all size: 5 (data) + 2 (eqn) + 2 (bd) = 9
+        return err_all, f_pred
 
     # create the continuation loss constraint at the interface of adjacent subregions
     def loss_match(params, data, idx):
+        # jdb.print('......Doing matching loss calculation for regionIdx={x}', x=idx)
         # create the function for gradient calculation involves input Z only
         net = lambda x, id: predNN(params, x, id)
         gdnet = lambda x, id: gradNN(params, x, id)
-        fgovterm = lambda x, id: gov_eqn(lambda x: net(x, id), x, scale[id])[1]
+        
+        # Need to pass basal flag to gov_eqn if we use it in matching (C2)
+        # gov_eqn signature updated to accept basal=...
+        # But here we invoke it.
+        # Check basal status of idx and idx+1
+        is_basal_1 = basal_mask[idx]
+        is_basal_2 = basal_mask[idx+1]
+        
+        fgovterm = lambda x, id, b: gov_eqn(lambda z: net(z, id), x, scale[id], basal=b)[1]
+        
         # load the position at the matching boundary between sub-regions
         x_md = data['md'][0][idx]
 
@@ -107,17 +171,34 @@ def loss_iso_create(solNN, eqn_all, scale, idxgall, lw):
         u_md1 = (U_md1[:, 0:1] + um[idx]) * u0[idx]
         v_md1 = (U_md1[:, 1:2] + vm[idx]) * v0[idx]
         h_md1 = (U_md1[:, 2:3]) * h0[idx]
-        mu_md1 = (U_md1[:, 3:4]) * mu0[idx]
+        mu_idx_1 = 4 if basal_mask[idx] else 3
+        mu_md1 = (U_md1[:, mu_idx_1:mu_idx_1+1]) * mu0[idx]
+        # jdb.print("mean u_md1: {x}", x=jnp.mean(u_md1))
+        # jdb.print("mean v_md1: {x}", x=jnp.mean(v_md1))
+        # jdb.print("mean h_md1: {x}", x=jnp.mean(h_md1))
+        # jdb.print("mu_md1: {x}", x=mu_md1)
+        
         vars_md1 = jnp.hstack([u_md1, v_md1, h_md1, 2 * jnp.log(mu_md1)])
+        
         # obtain the variable in sub-region 2 at the interface
         U_md2 = net(x_md[:, 2:4], idx + 1)
         u_md2 = (U_md2[:, 0:1] + um[idx + 1]) * u0[idx + 1]
         v_md2 = (U_md2[:, 1:2] + vm[idx + 1]) * v0[idx + 1]
         h_md2 = (U_md2[:, 2:3]) * h0[idx + 1]
-        mu_md2 = (U_md2[:, 3:4]) * mu0[idx + 1]
+        mu_idx_2 = 4 if basal_mask[idx+1] else 3
+        mu_md2 = (U_md2[:, mu_idx_2:mu_idx_2+1]) * mu0[idx + 1]
+        # jdb.print("mean u_md2: {x}", x=jnp.mean(u_md2))
+        # jdb.print("mean v_md2: {x}", x=jnp.mean(v_md2))
+        # jdb.print("mean h_md2: {x}", x=jnp.mean(h_md2))
+        # jdb.print("mu_md2: {x}", x=mu_md2)
+        # jdb.print("mean mu_md2: {x}", x=jnp.mean(2 * jnp.log(mu_md2)))
+        
         vars_md2 = jnp.hstack([u_md2, v_md2, h_md2, 2 * jnp.log(mu_md2)])
+        
         # group the c0 error
         match_c0_err = ms_error(vars_md1 - vars_md2)
+        # jdb.print("mean match_c0_err: {x}", x=jnp.where(jnp.isnan(vars_md1 - vars_md2), 0, 1))
+        # jdb.print("mean match_c0_err: {x}", x=jnp.mean(match_c0_err))
 
         """C1 stitching condition at the boundary"""
         # obtain the variable in sub-region 1 at the interface
@@ -135,23 +216,37 @@ def loss_iso_create(solNN, eqn_all, scale, idxgall, lw):
 
         """C2 stitching condition at the boundary"""
         # calculate equation residue in sub-region 1 at the interface
-        term_md1 = fgovterm(x_md[:, 0:2], idx)[:, 0:-1] * term0[idx]
+        # gov_eqn returns (f_eqn, val_term). we want val_term.
+        term_md1 = fgovterm(x_md[:, 0:2], idx, is_basal_1)[:, 0:-1] * term0[idx]
         # calculate equation residue in sub-region 2 at the interface
-        term_md2 = fgovterm(x_md[:, 2:4], idx + 1)[:, 0:-1] * term0[idx + 1]
-        # calculate the c2 error
-        match_c2_err = ms_error(nthrt(term_md1, 2) - nthrt(term_md2, 2))
+        term_md2 = fgovterm(x_md[:, 2:4], idx + 1, is_basal_2)[:, 0:-1] * term0[idx + 1]
+        
+        # C2 matching might be tricky if regions have different equations (basal vs floating).
+        # Floating terms: e1term1, e1term2, e1term3, e2term1, e2term2, e2term3, strate (7 terms)
+        # Basal terms: ... more terms (13 terms)
+        # If we match, we should probably only match the common viscous stress terms if possible, or just skip C2 at transition?
+        # Or just match the viscous terms (first 6).
+        # Let's take 0:6.
+        
+        match_c2_err = ms_error(nthrt(term_md1[:, 0:6], 2) - nthrt(term_md2[:, 0:6], 2))
 
-        # group all the stitching conditions
+        # group all the stitched conditions
         mc0_err = jnp.mean(match_c0_err)
         mc1_err = jnp.mean(match_c1_err)
         mc2_err = jnp.mean(match_c2_err)
+        # jdb.print("mc0_err: {x}", x=mc0_err)
+        # jdb.print("mc1_err: {x}", x=mc1_err)
+        # jdb.print("mc2_err: {x}", x=mc2_err)
         match_err = jnp.hstack([mc0_err, mc1_err*0.8, mc2_err*0.5])
         return match_err
 
     # loss function used for the PINN training
     def loss_fun(params, data):
         # calculate the data_err, eqn_err and bound_err for each sub-regions
-        reg_err_list = tree_map(lambda x: loss_sub(params, data, x), idxgall)
+        sub_results = [loss_sub(params, data, x) for x in idxgall]
+        reg_err_list = [res[0] for res in sub_results]
+        residuals_list = [res[1] for res in sub_results]
+        
         reg_err = jnp.mean(jnp.array(reg_err_list), axis=0)
         # calculate the error at the matching boundary
         match_err_list = tree_map(lambda x: loss_match(params, data, x), idxgall[0:-1])
@@ -160,7 +255,8 @@ def loss_iso_create(solNN, eqn_all, scale, idxgall, lw):
         err_all = jnp.hstack([reg_err, match_err])
 
         # set the weight for each condition and equation
-        data_w = jnp.array([1., 1., 0.6])
+        # data_w (u, v, h, s, log_u) -> 1, 1, 0.6, 0.6, 0.6
+        data_w = jnp.array([1., 1., 0.6, 0.6, 0.6])
         eqn_w = jnp.array([1., 1.])
         bd_w = jnp.array([1., 1.])
         md_w = jnp.ones(match_err.shape[0])
@@ -169,26 +265,33 @@ def loss_iso_create(solNN, eqn_all, scale, idxgall, lw):
 
         # calculate the overall data loss and equation loss
         loss_each = err_all * wgh_all
-        # calculate the overall data loss and equation loss
-        loss_data = jnp.sum(loss_each[0:3])
-        loss_eqn = jnp.sum(loss_each[3:5])
-        loss_bd = jnp.sum(loss_each[5:7])
-        loss_md = jnp.sum(loss_each[7:])
-
+        loss_data = jnp.sum(loss_each[0:5])
+        loss_eqn = jnp.sum(loss_each[5:7])
+        loss_bd = jnp.sum(loss_each[7:9])
+        loss_md = jnp.sum(loss_each[9:])
+        # jdb.print("loss_data: {x}", x=loss_data)
+        # jdb.print("loss_eqn: {x}", x=loss_eqn)
+        # jdb.print("loss_bd: {x}", x=loss_bd)
+        # jdb.print("loss_md: {x}", x=loss_md)
         # loading the pre-saved loss parameter
         loss_ref = loss_fun.lref
+        # load the (possibly mutated) loss weights
+        _lw = loss_fun.lw
         # calculate the total loss
-        loss = (loss_data + lw[0] * loss_eqn + lw[1] * loss_bd + lw[2] * loss_md)
+        loss = (_lw[0] * loss_data + _lw[1] * loss_eqn + _lw[2] * loss_bd + _lw[3] * loss_md)
         # normalize the loss by the initial reference value
         loss_n = loss / loss_ref
         # group the loss of all conditions and equations
-        loss_info = jnp.hstack([jnp.array([loss, loss_data, loss_eqn, loss_bd, loss_md]), err_all])
+        loss_info = [jnp.hstack([jnp.array([loss, loss_data, loss_eqn, loss_bd, loss_md]), err_all]), residuals_list]
         return loss_n, loss_info
 
     # setting the pre-saved loss parameter to loss_fun
     loss_fun.lref = 1.0
+    # store loss weights as mutable attribute (can be updated between stages)
+    loss_fun.lw = jnp.array(lw)
 
     return loss_fun
+
 
 
 #%% loss for inferring anisotropic viscosity
@@ -254,7 +357,7 @@ def loss_aniso_create(solNN, eqn_all, scale, idxgall, lw):
 
         # group all the error for output
         err_all = jnp.hstack([data_err, eqn_err, bd_err, sp_err])
-        return err_all
+        return err_all, f_pred
 
     # create the continuation loss constraint at the interface of adjacent subregions
     def loss_match(params, data, idx):
@@ -315,7 +418,11 @@ def loss_aniso_create(solNN, eqn_all, scale, idxgall, lw):
     # loss function used for the PINN training
     def loss_fun(params, data):
         # calculate the data_err, eqn_err and bound_err for each sub-regions
-        reg_err_list = tree_map(lambda x: loss_sub(params, data, x), idxgall)
+        # Unpack the tuple return from loss_sub
+        sub_results = [loss_sub(params, data, x) for x in idxgall]
+        reg_err_list = [res[0] for res in sub_results]
+        residuals_list = [res[1] for res in sub_results]
+
         reg_err = jnp.mean(jnp.array(reg_err_list), axis=0)
         # calculate the error at the matching boundary
         match_err_list = tree_map(lambda x: loss_match(params, data, x), idxgall[0:-1])
@@ -346,14 +453,14 @@ def loss_aniso_create(solNN, eqn_all, scale, idxgall, lw):
         # load the weight for the regularization loss
         wsp = loss_fun.wsp
         # calculate the total loss
-        loss = (loss_data + lw[0] * loss_eqn + lw[1] * loss_bd + lw[2] * loss_md + wsp * loss_sp)
+        loss = (lw[0] * loss_data + lw[1] * loss_eqn + lw[2] * loss_bd + lw[3] * loss_md + wsp * loss_sp)
         # normalize the loss by the initial reference value
         loss_n = loss / loss_ref
         # group the loss of all conditions and equations
-        loss_info = jnp.hstack([jnp.array([loss, loss_data, loss_eqn, loss_bd, loss_md, loss_sp]), err_all])
+        loss_info = [jnp.hstack([jnp.array([loss, loss_data, loss_eqn, loss_bd, loss_md, loss_sp]), err_all]), residuals_list]
         return loss_n, loss_info
 
     # setting the pre-saved loss parameter to loss_fun
     loss_fun.lref = 1.0
-    loss_fun.wsp = lw[3]
+    loss_fun.wsp = lw[4]
     return loss_fun

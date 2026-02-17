@@ -16,13 +16,40 @@ def calc_eqn_err(lossf, params, x):
     _, loss_info = lax.stop_gradient(lossf(params, x))
     return loss_info[1]
 
-def eval_RAD_probs(key, params, dataf, lossf):
+def eval_RAD_probs(key, params, dataf, lossf, adaptive_regions=None):
     data = dataf(key, eval_adaptive=True)
     eqn_err = calc_eqn_err(lossf, params, data)
-    eqn_err = jnp.sum(jnp.square(eqn_err), axis=1)
-    probs = eqn_err/jnp.mean(eqn_err) + 1 
-    probs /= jnp.sum(probs)
-    return probs 
+    
+    # Check if eqn_err is a list (XPINN) or array (PINN)
+    if isinstance(eqn_err, list):
+         # XPINN case
+        probs_list = []
+        for i, err_item in enumerate(eqn_err):
+            # Check if this region should be adaptive
+            # Default to True if adaptive_regions is None or not specified for this index
+            # is_adaptive = True
+            # if adaptive_regions is not None:
+            #     if isinstance(adaptive_regions, list) and i < len(adaptive_regions):
+            #         is_adaptive = adaptive_regions[i]
+            #     elif isinstance(adaptive_regions, dict):
+            #         is_adaptive = adaptive_regions.get(i, True)
+            
+            # if not is_adaptive:
+            #     probs_list.append(None)
+            # else:
+            # err_item is (N, ...)
+            err_sq = jnp.sum(jnp.square(err_item), axis=1)
+            p = err_sq / jnp.mean(err_sq) + 1
+            p /= jnp.sum(p)
+            probs_list.append(p)
+        return probs_list
+    else:
+        # PINN case
+        eqn_err = jnp.sum(jnp.square(eqn_err), axis=1)
+        probs = eqn_err/jnp.mean(eqn_err) + 1 
+        probs /= jnp.sum(probs)
+        return probs 
+
 
 # create the Adam minimizer
 @functools.partial(jit, static_argnames=("lossf", "opt"))
@@ -34,7 +61,8 @@ def adam_minimizer(lossf, params, data, opt, opt_state):
     return new_params, loss_info, opt_state
 
 
-def adam_optimizer(key, lossf, params, dataf, epoch, lr=1e-3, aniso=False, schdul=None, basal=False, adaptive=False, adapt_period=500):
+def adam_optimizer(key, lossf, params, dataf, epoch, lr=1e-3, aniso=False, schdul=None, 
+                   basal=False, adaptive=False, adapt_period=500):
     """using the adam optimizer for the training.
 
     Args:
@@ -70,7 +98,7 @@ def adam_optimizer(key, lossf, params, dataf, epoch, lr=1e-3, aniso=False, schdu
         adapted = False
     # start the training iteration
     for step in range(epoch):
-        # hard coded adaptive sampling every 500 epochs
+        # don't adapt in early training stages (first 10% of the epochs)
         adapt_sample = (step+1)%adapt_period==0 and (step+1)>(0.1*epoch) and adaptive
 
         # Evaluate RAD pdf for adaptive sampling
@@ -97,14 +125,10 @@ def adam_optimizer(key, lossf, params, dataf, epoch, lr=1e-3, aniso=False, schdu
         # minimize the loss function using Adam
         params, loss_info, opt_state = adam_minimizer(lossf, params, data, opt_Adam, opt_state)
         # print the loss for every 100 iteration
-        if (step+1) % 100 == 0:
+        if (step+1) % 500 == 0:
             # print the results
-            if basal:
-                print(f"Step:{step+1} | Loss:{loss_info[0][0]:.4e} | d:{loss_info[0][1]:.4e} | eq:{loss_info[0][2]:.4e} | "
-                f"b:{loss_info[0][3]:.4e} | logdata:{loss_info[0][4]:.4e}", file=sys.stderr)
-            else:
-                print(f"Step: {step+1} | Loss: {loss_info[0]:.4e} | Loss_d: {loss_info[1]:.4e} |"
-                f" Loss_e: {loss_info[2]:.4e} | Loss_b: {loss_info[3]:.4e}", file=sys.stderr)
+            print(f"ADAM Step:{step+1} | Loss:{loss_info[0][0]:.4e} | d:{loss_info[0][1]:.4e} | eq:{loss_info[0][2]:.4e} | "
+                  f"bd:{loss_info[0][3]:.4e}", file=sys.stderr)
             # if for anisotropic training
             if aniso:
                 # modify the wsp value over the iteration
@@ -112,7 +136,7 @@ def adam_optimizer(key, lossf, params, dataf, epoch, lr=1e-3, aniso=False, schdu
 
         
         # saving the loss
-        loss_all.append(loss_info[0][0:(5 if basal else 4)])
+        loss_all.append(loss_info[0][0:5])
 
     # obtain the total loss in the last iterations
     lossend = jnp.array(loss_all[-nc:])[:, 0]
@@ -121,25 +145,26 @@ def adam_optimizer(key, lossf, params, dataf, epoch, lr=1e-3, aniso=False, schdu
     # optain the last loss value
     llast = lossend[-1]
     # guarantee the loss value in last iteration is smaller than anyone before
-    while llast > lmin:
+    last_iter = 0
+    while llast > lmin and last_iter<epoch:
         # split the new key for randomization
         key = random.split(key, 1)[0]
         # re-sampling the data points
         data = dataf(key)
         # minimize the loss function using Adam
         params, loss_info, opt_state = adam_minimizer(lossf, params, data, opt_Adam, opt_state)
-        llast = loss_info[0][0]
         # saving the loss
-        loss_all.append(loss_info[0][0:(5 if basal else 4)])
+        llast = loss_info[0][0]
+        loss_all.append(loss_info[0][0:5])
+        last_iter += 1
     if adaptive:
         probs_last = eval_RAD_probs(key, params, dataf, lossf)
-        return params, loss_all, probs_last 
+        return params, loss_all# , probs_last 
     else:
         return params, loss_all
 
-
 # A factory to create a function required by tfp.optimizer.lbfgs_minimize.
-def lbfgs_function(lossf, init_params, data, basal=False):
+def lbfgs_function(lossf, init_params, data, basal=False, print_rate=500):
     # obtain the 1D parameters and the function that can turn back to the pytree
     _, unflat = flat_utl.ravel_pytree(init_params)
 
@@ -147,6 +172,19 @@ def lbfgs_function(lossf, init_params, data, basal=False):
         # updating the model's parameters from the 1D array
         params = unflat(params_1d)
         return params
+
+    # Define a class to handle printing state
+    class Printer:
+        def __init__(self):
+            self.step = 0
+            
+        def log(self, x):
+            self.step += 1
+            if self.step % print_rate == 0:
+                print(f"LBFGS Step:{self.step} | Loss:{x[0]:.4e} | d:{x[1]:.4e} | eq:{x[2]:.4e} | "
+                        f"bd:{x[3]:.4e}", file=sys.stderr)
+
+    printer = Printer()
 
     # A function that can be used by tfp.optimizer.lbfgs_minimize.
     @jit
@@ -161,12 +199,11 @@ def lbfgs_function(lossf, init_params, data, basal=False):
 
         # # store loss value so we can retrieve later
         call(lambda x: f.loss.append(x), loss_info[0][0:(5 if basal else 4)])
-        if basal:
-            call(lambda x: print(f"Step:NaN | Loss:{x[0]:.4e} | d:{x[1]:.4e} | eq:{x[2]:.4e} | "
-            f"b:{x[3]:.4e} | mag:{x[5]:.4e}", file=sys.stderr), loss_info[0])
-        else:
-            call(lambda x: print(f"Step:NaN | Loss: {x[0]:.4e} | Loss_d: {x[1]:.4e} |"
-            f" Loss_e: {x[2]:.4e} | Loss_b: {x[3]:.4e}", file=sys.stderr), loss_info)
+        
+        # Print using the printer class
+        # We pass loss_info[0] which contains the metrics
+        call(printer.log, loss_info[0])
+            
         return loss_value, grads_1d
 
     # store these information as members so we can use them outside the scope
@@ -176,8 +213,8 @@ def lbfgs_function(lossf, init_params, data, basal=False):
 
 
 # define the function to apply the L-BFGS optimizer
-def lbfgs_optimizer(lossf, params, data, epoch, basal=False):
-    func_lbfgs = lbfgs_function(lossf, params, data, basal=basal)
+def lbfgs_optimizer(lossf, params, data, epoch, basal=False, print_rate=100):
+    func_lbfgs = lbfgs_function(lossf, params, data, basal=basal, print_rate=print_rate)
     # convert initial model parameters to a 1D array
     init_params_1d = flat_utl.ravel_pytree(params)[0]
     # calculate the effective number of iteration

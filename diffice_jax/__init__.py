@@ -4,6 +4,8 @@ from .data.xpinns.preprocessing import normalize_data as normdata_xpinn
 from .data.pinns.sampling import data_sample_create as dsample_pinn
 from .data.xpinns.sampling import data_sample_create as dsample_xpinn
 
+from .data.xpinns.visualization import plot_xpinn_data
+
 from .equation.eqn_iso import vectgrad
 from .equation.eqn_iso import gov_eqn as ssa_iso
 from .equation.eqn_iso import front_eqn as dbc_iso
@@ -28,7 +30,9 @@ from .optimizer.optimization import adam_optimizer as adam_opt
 from .optimizer.optimization import lbfgs_optimizer as lbfgs_opt
 
 __all__ = ["normdata_pinn", "normdata_xpinn", "dsample_pinn", "dsample_xpinn", 
+           "plot_xpinn_data",
            "vectgrad", "ssa_iso", "dbc_iso", "ssa_aniso", "dbc_aniso", 
            "init_pinn", "init_xpinn", "solu_pinn", "solu_xpinn", 
            "loss_iso_pinn", "loss_aniso_pinn", "loss_iso_xpinn", "loss_aniso_xpinn",
            "predict_pinn", "predict_xpinn", "adam_opt", "lbfgs_opt"]
+

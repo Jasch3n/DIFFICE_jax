@@ -3,6 +3,9 @@
 Goal: "preprocessing_xpinns.py" normalize the observational data
 for large ice shelves which are stored in different sub-regions and
 organize the data into a form that is required for the PINN training
+
+Updated by: [Agent] to include basal inversion functionality
+
 '''
 
 import numpy as np
@@ -11,7 +14,8 @@ from jax.tree_util import tree_map
 
 
 # function to load the data for each sub-regions
-def normalize_each(data, idx, ng):
+def normalize_each(data, idx, ng, basal=False):
+
     '''
     :param data: data for all sub-regions
     :param idx: idx for the sub-region
@@ -27,13 +31,16 @@ def normalize_each(data, idx, ng):
     xraw_h = data['xd_h'][0, idx]  # unit [m] position
     yraw_h = data['yd_h'][0, idx]  # unit [m] position
     hraw = data['hd'][0, idx]  # unit [m] ice thickness
+    if basal:
+        sraw = data['sd'][0, idx]
+
 
     # extract the position of the calving front (right side of the domain)
     xct = data['xct'][0, idx]
     yct = data['yct'][0, idx]
     nnct = data['nnct'][0, idx]
 
-    # extract the position of interface between to nearby sub-regions
+    # extract the position of interface between two nearby sub-regions
     if idx == 0:
         x_md = data['x_md'][0, idx]
         y_md = data['y_md'][0, idx]
@@ -43,6 +50,11 @@ def normalize_each(data, idx, ng):
     else:
         x_md = jnp.vstack([data['x_md'][0, idx-1], data['x_md'][0, idx]])
         y_md = jnp.vstack([data['y_md'][0, idx-1], data['y_md'][0, idx]])
+
+    # extract variables at the grounding line for basal inversions
+    if basal:
+        pass
+
 
 
     #%%
@@ -57,6 +69,9 @@ def normalize_each(data, idx, ng):
     x0_h = xraw_h.flatten()
     y0_h = yraw_h.flatten()
     h0 = hraw.flatten()
+    if basal:
+        s0 = sraw.flatten()
+
 
     # remove the nan value in the velocity data
     idxval_u = jnp.where(~np.isnan(u0))[0]
@@ -70,6 +85,14 @@ def normalize_each(data, idx, ng):
     x_h = x0_h[idxval_h, None]
     y_h = y0_h[idxval_h, None]
     h = h0[idxval_h, None]
+    if basal:
+        s = s0[idxval_h, None]
+    
+    # remove invalid values in boundary data
+    if basal:
+        xct = xct
+        yct = yct
+
 
     #%%
     # calculate the magnitude of each output variable for normalization later
@@ -88,6 +111,11 @@ def normalize_each(data, idx, ng):
     h_mean = jnp.mean(h)
     h_range = jnp.std(h) * 2
 
+    if basal:
+        s_mean = jnp.mean(s)
+        s_range = jnp.std(s) * 2
+
+
     # normalize the velocity data
     x_n = (x - x_mean) / x_range
     y_n = (y - y_mean) / y_range
@@ -98,6 +126,9 @@ def normalize_each(data, idx, ng):
     xh_n = (x_h - x_mean) / x_range
     yh_n = (y_h - y_mean) / y_range
     h_n = (h) / h_mean
+    if basal:
+        s_n = (s) / h_mean 
+
 
     # normalize the calving front position
     xct_n = (xct - x_mean) / x_range
@@ -109,8 +140,13 @@ def normalize_each(data, idx, ng):
 
     # group the raw data
     data_raw = [x0, y0, u0, v0, x0_h, y0_h, h0]
+    if basal:
+        data_raw.append(s0)
     # group the normalized data
     data_norm = [x_n, y_n, u_n, v_n, xh_n, yh_n, h_n]
+    if basal:
+        data_norm.append(s_n)
+
     # group the nan info of original data
     idxval_all = [idxval_u, idxval_h]
     # group the shape info of original data
@@ -118,7 +154,21 @@ def normalize_each(data, idx, ng):
 
     # group the mean and range info for each variable (shape = (5,))
     data_mean = jnp.hstack([x_mean, y_mean, u_mean, v_mean, h_mean])
+    data_mean = jnp.hstack([x_mean, y_mean, u_mean, v_mean, h_mean])
+    if basal:
+        data_mean = jnp.hstack([data_mean, s_mean])
     data_range = jnp.hstack([x_range, y_range, u_range, v_range, h_range])
+    if basal:
+        data_range = jnp.hstack([data_range, s_range])
+    
+    if basal:
+        # calculate the scale of viscosity for boundary condition
+        rho = 917
+        g = 9.8
+        u0m = jnp.maximum(u_range, v_range) # using range as approximate scale
+        l0m = jnp.maximum(x_range, y_range)
+        mu0 = rho * g * h_mean * (l0m / u0m)
+
 
     # gathering all the data information
     data_info = [data_mean, data_range, data_norm, data_raw, idxval_all, dsize_all]
@@ -131,18 +181,31 @@ def normalize_each(data, idx, ng):
     X_md = jnp.hstack((xmd_n, ymd_n))
     # sequence of output matrix column is u,v,h
     U_star = [jnp.hstack((u_n, v_n)), h_n]
+    if basal:
+        U_star.append(s_n)
+    
+    if basal:
+        boundary_star = None
+        return X_star, U_star, X_ct, nnct, data_info, X_md, boundary_star
+    else:
+        return X_star, U_star, X_ct, nnct, data_info, X_md
 
-    return X_star, U_star, X_ct, nnct, data_info, X_md
 
 
 # function to load the data for all sub-regions
-def normalize_data(data):
+def normalize_data(data, basal_mask=None):
     # count the number of sub-regions
     ng = len(data['xd'][0])
+    
+    # create default basal mask if not provided (all floating)
+    if basal_mask is None:
+        basal_mask = [False] * ng
+        
     # create an index list for different sub-regions
     idxgall = jnp.arange(ng).tolist()
     # load the data for each sub-regions
-    data_all = tree_map(lambda x: normalize_each(data, x, ng), idxgall)
+    data_all = tree_map(lambda x, b: normalize_each(data, x, ng, basal=b), idxgall, basal_mask)
+
 
     # exact the postion matrix of velocity data for entire ice shelves
     Xe = data['Xe']

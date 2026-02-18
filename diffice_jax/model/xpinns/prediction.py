@@ -22,7 +22,7 @@ def dataArrange(var, idxval, dsize):
 def extract_scale(scale_info, basal=False):
     # define the global parameter
     rho = 917
-    rho_w = 1030
+    rho_w = 1023
     g = 9.8
     gd = g * (1 - rho / rho_w)  # reduced gravitational acceleration
     # load the scale information

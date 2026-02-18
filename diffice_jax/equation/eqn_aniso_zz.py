@@ -52,7 +52,7 @@ def gov_eqn(net, x, scale):
     """
     # setting the global parameters
     rho = 917
-    rho_w = 1030
+    rho_w = 1023
     gd = 9.8*(1-rho/rho_w)  # gravitational acceleration
 
     dmean, drange = scale[0:2]
@@ -116,7 +116,7 @@ def front_eqn(net, x, nb, scale):
 
     # setting the global parameters
     rho = 917
-    rho_w = 1030
+    rho_w = 1023
     gd = 9.8 * (1 - rho / rho_w)  # gravitational acceleration
 
     dmean, drange = scale[0:2]

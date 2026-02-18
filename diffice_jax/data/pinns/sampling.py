@@ -14,7 +14,7 @@ def data_sample_create(data_all, n_pt,basal=False):
     X_ct = data_all[2]
     nn_ct = data_all[3]
     if basal:
-        u_bd, v_bd, mu_bd = data_all[5]
+        u_bd, v_bd, h_bd, mu_bd = data_all[5]
     # obtain the number of data points and points at the boundary
     n_data = X_star[0].shape[0]
     nh_data = X_star[1].shape[0]
@@ -58,6 +58,7 @@ def data_sample_create(data_all, n_pt,basal=False):
         X_bd = X_ct[idx_cbd]
         if basal: 
             mu_bd_smp = mu_bd[idx_cbd]
+            h_bd_smp = h_bd[idx_cbd]
             u_bd_smp = jnp.expand_dims(u_bd[idx_cbd], axis=1)
             v_bd_smp = jnp.expand_dims(v_bd[idx_cbd], axis=1)
         else:
@@ -65,7 +66,7 @@ def data_sample_create(data_all, n_pt,basal=False):
 
         # group all the data and collocation points
         if basal:
-            data = dict(smp=[X_smp, U_smp, Xh_smp, H_smp, S_smp], col=[X_col],  bd=[X_bd, jnp.hstack((u_bd_smp, v_bd_smp)), mu_bd_smp])
+            data = dict(smp=[X_smp, U_smp, Xh_smp, H_smp, S_smp], col=[X_col],  bd=[X_bd, jnp.hstack((u_bd_smp, v_bd_smp)), h_bd_smp, mu_bd_smp])
         else: 
             data = dict(smp=[X_smp, U_smp, Xh_smp, H_smp], col=[X_col],  bd=[X_bd, nn_bd])
         return data

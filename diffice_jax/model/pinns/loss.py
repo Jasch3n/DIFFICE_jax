@@ -47,7 +47,8 @@ def loss_iso_create(predf, eqn_all, scale, lw, basal=False):
         x_bd = data['bd'][0]
         if basal:
             u_bd = data['bd'][1]
-            mu_bd = data['bd'][2]
+            h_bd = data['bd'][2]
+            mu_bd = data['bd'][3]
         else:
             nn_bd = data['bd'][1]
 
@@ -60,14 +61,18 @@ def loss_iso_create(predf, eqn_all, scale, lw, basal=False):
         f_pred, term = gov_eqn(net, x_col, scale, basal=basal)
         f_pred_bd, _ = gov_eqn(net, x_bd, scale, basal=basal)
         if basal:
+            # Get network predictions 
             gl_pred = net(x_bd)
-            # mu_bd_pred = net(x_bd)[:,4:5].flatten()
             u_bd_pred = jnp.hstack((gl_pred[:, 0:1], gl_pred[:, 1:2]))
+            h_bd_pred = gl_pred[:, 2:3].flatten()
+            # s_bd_pred = gl_pred[:, 3:4].flatten()
             mu_bd_pred = gl_pred[:, 4:5].flatten()
-            mu_bd_err = ms_error(jnp.log(mu_bd_pred) - jnp.log(mu_bd))
+
+            # Calculate boundary mismatch
             u_bd_err = ms_error(u_bd_pred - u_bd)
-            # eqn_bd_err = ms_error(f_pred_bd)
-            bd_err = mu_bd_err
+            h_bd_err = ms_error(h_bd_pred - h_bd)
+            mu_bd_err = ms_error(jnp.log(mu_bd_pred) - jnp.log(mu_bd))
+            bd_err = jnp.hstack((u_bd_err, h_bd_err, mu_bd_err))
         else:
             f_bd, term_bd = front_eqn(net, x_bd, nn_bd, scale)
 
@@ -117,7 +122,7 @@ def loss_iso_create(predf, eqn_all, scale, lw, basal=False):
         if basal:
             # bd_weight = jnp.array([1., 1., 1., 0.5, 0.5])
             # bd_weight = jnp.array([1., 1., 1.])
-            bd_weight = jnp.array([1.])
+            bd_weight = jnp.array([0.3, 0.3, 0.3, 1.0])
         else:
             bd_weight = jnp.array([1., 1.])
 

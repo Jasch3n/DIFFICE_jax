@@ -17,7 +17,7 @@ def nthrt(x, n):
 def sub_scale(scale, basal=False):
     # define the global parameter
     rho = 917
-    rho_w = 1030
+    rho_w = 1023
     g = 9.8
     gd = g * (1 - rho / rho_w)  # reduced gravitational acceleration
     # load the scale information

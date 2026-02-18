@@ -48,9 +48,10 @@ def gov_eqn(net, x, scale, basal=False):
     """
     :param net: the neural net instance for calculating the informed part
     """
+    # [TODO]: pass these parameters in through the config file 
     # setting the global parameters
     rho = 917
-    rho_w = 1030
+    rho_w = 1023
     g = 9.8
     gd = g*(1-rho/rho_w)  # gravitational acceleration
 
@@ -181,7 +182,7 @@ def front_eqn(net, x, nb, scale):
 
     # setting the global parameters
     rho = 917
-    rho_w = 1030
+    rho_w = 1023
     gd = 9.8 * (1 - rho / rho_w)  # gravitational acceleration
 
     dmean, drange = scale[0:2]

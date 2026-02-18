@@ -47,7 +47,7 @@ def normalize_data(data,basal=False):
         bd_mu_raw = data['bd_mu'].flatten()
         bd_u_raw = data['bd_ud'].flatten()
         bd_v_raw = data['bd_vd'].flatten()
-        # hraw_gl = data['gl_hd'].flatten()
+        bd_h_raw = data['bd_hd'].flatten()
 
     #%%
 
@@ -86,6 +86,7 @@ def normalize_data(data,basal=False):
         bd_mu_raw = bd_mu_raw[idxval_bd, None].flatten()
         bd_u_raw = bd_u_raw[idxval_bd, None].flatten()
         bd_v_raw = bd_v_raw[idxval_bd, None].flatten()
+        bd_h_raw = bd_h_raw[idxval_bd, None].flatten()
         xct = jnp.squeeze(xct[idxval_bd, None], 2)
         yct = jnp.squeeze(yct[idxval_bd, None], 2)
     #%%
@@ -162,6 +163,7 @@ def normalize_data(data,basal=False):
         mu_n_bd = bd_mu_raw / mu0
         u_n_bd = (bd_u_raw - u_mean) / u_range 
         v_n_bd = (bd_v_raw - v_mean) / v_range 
+        h_n_bd = bd_h_raw / h0
 
     # gathering all the data information
     data_info = [data_mean, data_range, data_norm, data_raw, idxval_all, dsize_all]
@@ -177,7 +179,7 @@ def normalize_data(data,basal=False):
         U_star.append(s_n)
 
     if basal:
-        boundary_star = [u_n_bd, v_n_bd, mu_n_bd]
+        boundary_star = [u_n_bd, v_n_bd, h_n_bd, mu_n_bd]
 
     if basal:
         return X_star, U_star, X_ct, nnct, data_info, boundary_star

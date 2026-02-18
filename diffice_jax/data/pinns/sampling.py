@@ -21,21 +21,9 @@ def data_sample_create(data_all, n_pt,basal=False):
     n_bd = X_ct.shape[0]
 
     # define the function that can re-sampling for each calling
-    def dataf(key, eval_adaptive=False, adaptive_probs=None, mix_adaptive=False):
+    def dataf(key, eval_adaptive=False, adaptive_probs=None, adapt_data=False, mix_adaptive=False):
         # generate the new random key
         keys = random.split(key, 4)
-
-        # sampling the velocity data point based on the index
-        idx_smp = random.choice(keys[0], jnp.arange(n_data), [n_pt[0]])
-        X_smp = X_star[0][idx_smp]
-        U_smp = U_star[0][idx_smp]
-
-        # sampling the thickness data point based on the index
-        idxh_smp = random.choice(keys[1], jnp.arange(nh_data), [n_pt[1]])
-        Xh_smp = X_star[1][idxh_smp]
-        H_smp = U_star[1][idxh_smp]
-        if basal:
-            S_smp = U_star[2][idxh_smp]
 
         # generate a random sample of collocation point within the domain
         if adaptive_probs is None:
@@ -46,15 +34,26 @@ def data_sample_create(data_all, n_pt,basal=False):
             idx_col = jnp.concatenate((idx_col_1, idx_col_2), axis=0)
         else:
             idx_col = random.choice(keys[2], jnp.arange(n_data), [n_pt[2]], p=adaptive_probs)
+        X_col = X_star[0] if eval_adaptive else X_star[0][idx_col]
 
-        # sampling the data point based on the index
-        if eval_adaptive:
-            X_col = X_star[0] 
+        # sampling the velocity data point based on the index
+        if adapt_data:
+            X_smp = X_star[0][idx_col]
+            U_smp = U_star[0][idx_col]
         else:
-            X_col = X_star[0][idx_col]
-        # generate a random index of the data at ice front
+            idx_smp = random.choice(keys[0], jnp.arange(n_data), [n_pt[0]])
+            X_smp = X_star[0][idx_smp]
+            U_smp = U_star[0][idx_smp]
+
+        # sampling the thickness data point based on the index
+        idxh_smp = random.choice(keys[1], jnp.arange(nh_data), [n_pt[1]])
+        Xh_smp = X_star[1][idxh_smp]
+        H_smp = U_star[1][idxh_smp]
+        if basal:
+            S_smp = U_star[2][idxh_smp]
+
+        # sampling the boundary based on index
         idx_cbd = random.choice(keys[3], jnp.arange(n_bd), [n_pt[3]])
-        # sampling the data point based on the index
         X_bd = X_ct[idx_cbd]
         if basal: 
             mu_bd_smp = mu_bd[idx_cbd]

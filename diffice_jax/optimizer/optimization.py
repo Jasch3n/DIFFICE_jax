@@ -100,7 +100,7 @@ def adam_optimizer(key, lossf, params, dataf, epoch, lr=1e-3, aniso=False, schdu
     # start the training iteration
     for step in range(epoch):
         # don't adapt in early training stages (first 10% of the epochs)
-        adapt_sample = (step+1)%adapt_period==0 and (step+1)>(0.1*epoch) and adaptive
+        adapt_sample = (step+1)%adapt_period==0 and (step+1)>20000 and adaptive
 
         # Evaluate RAD pdf for adaptive sampling
         if adapt_sample:
@@ -126,7 +126,7 @@ def adam_optimizer(key, lossf, params, dataf, epoch, lr=1e-3, aniso=False, schdu
         # minimize the loss function using Adam
         params, loss_info, opt_state = adam_minimizer(lossf, params, data, opt_Adam, opt_state)
         # print the loss for every 100 iteration
-        if (step+1) % 500 == 0:
+        if (step+1) % 1000 == 0:
             # print the results
             print(f"ADAM Step:{step+1} | Loss:{loss_info[0][0]:.4e} | d:{loss_info[0][1]:.4e} | eq:{loss_info[0][2]:.4e} | "
                   f"bd:{loss_info[0][3]:.4e}", file=sys.stderr)

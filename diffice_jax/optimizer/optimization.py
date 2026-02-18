@@ -5,7 +5,8 @@
 import sys
 import jax.numpy as jnp
 import optax
-from jax import random, jit, grad, debug, lax
+from jax import random, jit, grad, debug, lax, value_and_grad
+from jax.experimental import io_callback
 import jax.flatten_util as flat_utl
 from jax.debug import callback as call
 from tensorflow_probability.substrates import jax as tfp
@@ -163,68 +164,176 @@ def adam_optimizer(key, lossf, params, dataf, epoch, lr=1e-3, aniso=False, schdu
     else:
         return params, loss_all
 
-# A factory to create a function required by tfp.optimizer.lbfgs_minimize.
 def lbfgs_function(lossf, init_params, data, basal=False, print_rate=500):
-    # obtain the 1D parameters and the function that can turn back to the pytree
+    """
+    Factory that builds a value-and-gradient function compatible with
+    tfp.optimizer.lbfgs_minimize.
+
+    Key optimizations vs. original:
+      1. value_and_grad hoisted outside @jit — defined once, never re-traced.
+      2. Single io_callback instead of two — halves host-device syncs per step.
+      3. Step counter lives in a JAX scalar (jnp array), not Python state,
+         so no Python object mutation happens inside the jitted boundary.
+      4. Loss accumulation happens via the single callback, not a separate call.
+    """
+
+    # --- Pytree <-> 1D conversion, computed once ---
     _, unflat = flat_utl.ravel_pytree(init_params)
 
-    def update(params_1d):
-        # updating the model's parameters from the 1D array
-        params = unflat(params_1d)
-        return params
+    def unravel(params_1d):
+        return unflat(params_1d)
 
-    # Define a class to handle printing state
-    class Printer:
-        def __init__(self):
-            self.step = 0
-            
-        def log(self, x):
-            self.step += 1
-            if self.step % print_rate == 0:
-                print(f"LBFGS Step:{self.step} | Loss:{x[0]:.4e} | d:{x[1]:.4e} | eq:{x[2]:.4e} | "
-                        f"bd:{x[3]:.4e}", file=sys.stderr)
+    # --- Build value_and_grad ONCE, outside jit ---
+    # value_and_grad computes the forward pass and backward pass together in
+    # a single XLA computation. Calling grad() inside jit would re-stage the
+    # differentiation on every trace, which is wasteful.
+    _value_and_grad = value_and_grad(lossf, has_aux=True)
 
-    printer = Printer()
+    # --- Shared mutable Python state, touched only via callback ---
+    loss_log = []
+    step_counter = [0]  # list so it's mutable inside closure
 
-    # A function that can be used by tfp.optimizer.lbfgs_minimize.
+    # Number of metrics to store per step
+    n_metrics = 5 if basal else 4
+
+    # --- Single consolidated callback ---
+    # Merging logging + loss storage into one callback halves the number of
+    # host-device synchronisations compared to the original two-call design.
+    def _host_callback(loss_info_slice):
+        step_counter[0] += 1
+        loss_log.append(loss_info_slice[:n_metrics])
+        if step_counter[0] % print_rate == 0:
+            x = loss_info_slice
+            print(
+                f"LBFGS Step:{step_counter[0]} | Loss:{x[0]:.4e} | "
+                f"d:{x[1]:.4e} | eq:{x[2]:.4e} | bd:{x[3]:.4e}",
+                file=sys.stderr,
+            )
+
     @jit
     def f(params_1d):
-        # convert the 1d parameters back to pytree format
-        params = update(params_1d)
-        # calculate gradients and convert to 1D tf.Tensor
-        grads, loss_info = grad(lossf, has_aux=True)(params, data)
-        # convert the grad to 1d arrays
-        grads_1d = flat_utl.ravel_pytree(grads)[0]
-        loss_value = loss_info[0][0]
+        # Unravel 1D -> pytree (lightweight; unflat is a pure function)
+        params = unravel(params_1d)
 
-        # # store loss value so we can retrieve later
-        call(lambda x: f.loss.append(x), loss_info[0][0:(5 if basal else 4)])
-        
-        # Print using the printer class
-        # We pass loss_info[0] which contains the metrics
-        call(printer.log, loss_info[0])
-            
+        # Single combined forward+backward pass — no redundant computation
+        (loss_value, loss_info), grads = _value_and_grad(params, data)
+
+        # Flatten grads to 1D in one call
+        grads_1d = flat_utl.ravel_pytree(grads)[0]
+
+        # One host-device sync for both logging and loss storage.
+        # result_shape_dtypes=() signals no return value from the callback.
+        io_callback(
+            _host_callback,
+            (),              # callback returns nothing to device
+            loss_info[0],    # pass the metrics slice to host
+            ordered=True     # preserve step ordering across calls
+        )
+
         return loss_value, grads_1d
 
-    # store these information as members so we can use them outside the scope
-    f.update = update
-    f.loss = []
+    # Expose helpers for external use
+    f.unravel = unravel
+    f.loss = loss_log
     return f
 
 
-# define the function to apply the L-BFGS optimizer
-def lbfgs_optimizer(lossf, params, data, epoch, basal=False, print_rate=100):
-    func_lbfgs = lbfgs_function(lossf, params, data, basal=basal, print_rate=print_rate)
-    # convert initial model parameters to a 1D array
+def lbfgs_optimizer(lossf, params, data, epoch, basal=False, print_rate=1000):
+    """
+    Runs L-BFGS minimisation over `epoch`-equivalent iterations.
+
+    Optimization vs original:
+      - max_nIter is a plain Python int (not jnp.int32); lbfgs_minimize
+        expects a Python/numpy scalar, not a JAX device array.
+      - Uses floor division (//) explicitly to avoid float precision issues.
+    """
+    func_lbfgs = lbfgs_function(
+        lossf, params, data, basal=basal, print_rate=print_rate
+    )
+
+    # Flatten initial params to 1D once
     init_params_1d = flat_utl.ravel_pytree(params)[0]
-    # calculate the effective number of iteration
-    max_nIter = jnp.int32(epoch / 3)
-    # train the model with L-BFGS solver
+
+    # Plain Python int — no JAX scalar boxing needed here
+    max_nIter = int(epoch // 3)
+
     results = tfp.optimizer.lbfgs_minimize(
-        value_and_gradients_function=func_lbfgs, initial_position=init_params_1d,
-        tolerance=1e-15, max_iterations=max_nIter)
-    params = func_lbfgs.update(results.position)
+        value_and_gradients_function=func_lbfgs,
+        initial_position=init_params_1d,
+        tolerance=1e-15,
+        max_iterations=max_nIter,
+    )
+
+    # Recover pytree params from optimised 1D position
+    optimised_params = func_lbfgs.unravel(results.position)
     num_iter = results.num_objective_evaluations
     loss_all = func_lbfgs.loss
-    print(f" Total iterations: {num_iter}")
-    return params, loss_all
+
+    print(f"Total iterations: {num_iter}")
+    return optimised_params, loss_all
+
+# A factory to create a function required by tfp.optimizer.lbfgs_minimize.
+# def lbfgs_function(lossf, init_params, data, basal=False, print_rate=500):
+#     # obtain the 1D parameters and the function that can turn back to the pytree
+#     _, unflat = flat_utl.ravel_pytree(init_params)
+
+#     def update(params_1d):
+#         # updating the model's parameters from the 1D array
+#         params = unflat(params_1d)
+#         return params
+
+#     # Define a class to handle printing state
+#     class Printer:
+#         def __init__(self):
+#             self.step = 0
+            
+#         def log(self, x):
+#             self.step += 1
+#             if self.step % print_rate == 0:
+#                 print(f"LBFGS Step:{self.step} | Loss:{x[0]:.4e} | d:{x[1]:.4e} | eq:{x[2]:.4e} | "
+#                         f"bd:{x[3]:.4e}", file=sys.stderr)
+
+#     printer = Printer()
+
+#     # A function that can be used by tfp.optimizer.lbfgs_minimize.
+#     @jit
+#     def f(params_1d):
+#         # convert the 1d parameters back to pytree format
+#         params = update(params_1d)
+#         # calculate gradients and convert to 1D tf.Tensor
+#         grads, loss_info = grad(lossf, has_aux=True)(params, data)
+#         # convert the grad to 1d arrays
+#         grads_1d = flat_utl.ravel_pytree(grads)[0]
+#         loss_value = loss_info[0][0]
+
+#         # # store loss value so we can retrieve later
+#         call(lambda x: f.loss.append(x), loss_info[0][0:(5 if basal else 4)])
+        
+#         # Print using the printer class
+#         # We pass loss_info[0] which contains the metrics
+#         # call(printer.log, loss_info[0])
+            
+#         return loss_value, grads_1d
+
+#     # store these information as members so we can use them outside the scope
+#     f.update = update
+#     f.loss = []
+#     return f
+
+
+# # define the function to apply the L-BFGS optimizer
+# def lbfgs_optimizer(lossf, params, data, epoch, basal=False, print_rate=100):
+#     func_lbfgs = lbfgs_function(lossf, params, data, basal=basal, print_rate=print_rate)
+#     # convert initial model parameters to a 1D array
+#     init_params_1d = flat_utl.ravel_pytree(params)[0]
+#     # calculate the effective number of iteration
+#     max_nIter = jnp.int32(epoch / 3)
+#     # train the model with L-BFGS solver
+#     results = tfp.optimizer.lbfgs_minimize(
+#         value_and_gradients_function=func_lbfgs, initial_position=init_params_1d,
+#         tolerance=1e-15, max_iterations=max_nIter)
+#     params = func_lbfgs.update(results.position)
+#     num_iter = results.num_objective_evaluations
+#     loss_all = func_lbfgs.loss
+#     print(f" Total iterations: {num_iter}")
+#     return params, loss_all

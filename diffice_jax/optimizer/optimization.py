@@ -128,16 +128,19 @@ def adam_optimizer(key, lossf, params, dataf, epoch, lr=1e-3, aniso=False, schdu
         # print the loss for every 100 iteration
         if (step+1) % 1000 == 0:
             # print the results
-            print(f"ADAM Step:{step+1} | Loss:{loss_info[0][0]:.4e} | d:{loss_info[0][1]:.4e} | eq:{loss_info[0][2]:.4e} | "
-                  f"bd:{loss_info[0][3]:.4e}", file=sys.stderr)
-            # if for anisotropic training
+            if len(loss_info[0]) > 1:
+                print(f"ADAM Step:{step+1} | Loss:{loss_info[0][0]:.4e} | d:{loss_info[0][1]:.4e} | eq:{loss_info[0][2]:.4e} | "
+                    f"bd:{loss_info[0][3]:.4e}", file=sys.stderr)
+            else:
+                print(f"ADAM Step:{step+1} | Loss:{loss_info[0]:.4e} | d:{loss_info[1]:.4e} | eq:{loss_info[2]:.4e} | "
+                    f"bd:{loss_info[3]:.4e} | m:{loss_info[4]:.4e}", file=sys.stderr)
             if aniso:
                 # modify the wsp value over the iteration
                 lossf.wsp = wsp0 * schdul(step+1)
 
         
         # saving the loss
-        loss_all.append(loss_info[0][0:5])
+        loss_all.append(loss_info[0:5])
 
     # obtain the total loss in the last iterations
     lossend = jnp.array(loss_all[-nc:])[:, 0]
@@ -202,7 +205,7 @@ def lbfgs_function(lossf, init_params, data, basal=False, print_rate=500):
     def _host_callback(loss_info_slice):
         step_counter[0] += 1
         loss_log.append(loss_info_slice[:n_metrics])
-        if step_counter[0] % print_rate == 0:
+        if (step_counter[0] % print_rate == 0) or step_counter[0]<=10:
             x = loss_info_slice
             print(
                 f"LBFGS Step:{step_counter[0]} | Loss:{x[0]:.4e} | "
@@ -226,7 +229,7 @@ def lbfgs_function(lossf, init_params, data, basal=False, print_rate=500):
         io_callback(
             _host_callback,
             (),              # callback returns nothing to device
-            loss_info[0],    # pass the metrics slice to host
+            loss_info,    # pass the metrics slice to host
             ordered=True     # preserve step ordering across calls
         )
 
@@ -238,7 +241,7 @@ def lbfgs_function(lossf, init_params, data, basal=False, print_rate=500):
     return f
 
 
-def lbfgs_optimizer(lossf, params, data, epoch, basal=False, print_rate=1000):
+def lbfgs_optimizer(lossf, params, data, epoch, basal=False, print_rate=1):
     """
     Runs L-BFGS minimisation over `epoch`-equivalent iterations.
 

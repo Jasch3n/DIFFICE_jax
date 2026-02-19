@@ -62,8 +62,8 @@ def adam_minimizer(lossf, params, data, opt, opt_state):
     return new_params, loss_info, opt_state
 
 
-def adam_optimizer(key, lossf, params, dataf, epoch, lr=1e-3, aniso=False, schdul=None, 
-                   basal=False, adaptive=False, adapt_period=500):
+def adam_optimizer(key, lossf, params, dataf, epoch, lr=1e-3, aniso=False, schdul=None,
+                   adaptive=False, adapt_period=500):
     """using the adam optimizer for the training.
 
     Args:

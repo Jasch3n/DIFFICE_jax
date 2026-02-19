@@ -128,7 +128,7 @@ def adam_optimizer(key, lossf, params, dataf, epoch, lr=1e-3, aniso=False, schdu
         # print the loss for every 100 iteration
         if (step+1) % 1000 == 0:
             # print the results
-            if len(loss_info[0]) > 1:
+            if len(loss_info.shape)> 1:
                 print(f"ADAM Step:{step+1} | Loss:{loss_info[0][0]:.4e} | d:{loss_info[0][1]:.4e} | eq:{loss_info[0][2]:.4e} | "
                     f"bd:{loss_info[0][3]:.4e}", file=sys.stderr)
             else:

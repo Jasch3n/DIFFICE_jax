@@ -241,7 +241,7 @@ def lbfgs_function(lossf, init_params, data, basal=False, print_rate=500):
     return f
 
 
-def lbfgs_optimizer(lossf, params, data, epoch, basal=False, print_rate=1):
+def lbfgs_optimizer(lossf, params, data, epoch, basal=False, print_rate=1000):
     """
     Runs L-BFGS minimisation over `epoch`-equivalent iterations.
 

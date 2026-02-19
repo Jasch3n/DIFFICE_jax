@@ -55,10 +55,6 @@ def normalize_each(data, idx, ng, basal=False):
     if basal:
         pass
 
-
-
-    #%%
-
     # flatten the velocity data into 1d array
     x0 = xraw.flatten()
     y0 = yraw.flatten()
@@ -71,7 +67,6 @@ def normalize_each(data, idx, ng, basal=False):
     h0 = hraw.flatten()
     if basal:
         s0 = sraw.flatten()
-
 
     # remove the nan value in the velocity data
     idxval_u = jnp.where(~np.isnan(u0))[0]
@@ -87,14 +82,7 @@ def normalize_each(data, idx, ng, basal=False):
     h = h0[idxval_h, None]
     if basal:
         s = s0[idxval_h, None]
-    
-    # remove invalid values in boundary data
-    if basal:
-        xct = xct
-        yct = yct
 
-
-    #%%
     # calculate the magnitude of each output variable for normalization later
     x_mean = jnp.mean(x)
     x_range = (x.max() - x.min()) / 2
@@ -169,17 +157,15 @@ def normalize_each(data, idx, ng, basal=False):
         l0m = jnp.maximum(x_range, y_range)
         mu0 = rho * g * h_mean * (l0m / u0m)
 
-
     # gathering all the data information
     data_info = [data_mean, data_range, data_norm, data_raw, idxval_all, dsize_all]
-
-    #%% generate the sampling points and collocation points
 
     # group the input and output into matrix
     X_star = [jnp.hstack((x_n, y_n)), jnp.hstack((xh_n, yh_n))]
     X_ct = jnp.hstack((xct_n, yct_n))
     X_md = jnp.hstack((xmd_n, ymd_n))
-    # sequence of output matrix column is u,v,h
+
+    # sequence of output matrix column is u,v,h (and s if basal)
     U_star = [jnp.hstack((u_n, v_n)), h_n]
     if basal:
         U_star.append(s_n)

@@ -28,12 +28,11 @@ from .model.xpinns.prediction import predict as predict_xpinn
 
 from .optimizer.optimization import adam_optimizer as adam_opt
 from .optimizer.optimization import lbfgs_optimizer as lbfgs_opt
-from .optimizer.optimization import eval_RAD_probs as eval_RAD_probs
 
 __all__ = ["normdata_pinn", "normdata_xpinn", "dsample_pinn", "dsample_xpinn", 
            "plot_xpinn_data",
            "vectgrad", "ssa_iso", "dbc_iso", "ssa_aniso", "dbc_aniso", 
            "init_pinn", "init_xpinn", "solu_pinn", "solu_xpinn", 
            "loss_iso_pinn", "loss_aniso_pinn", "loss_iso_xpinn", "loss_aniso_xpinn",
-           "predict_pinn", "predict_xpinn", "adam_opt", "lbfgs_opt", "eval_RAD_probs"]
+           "predict_pinn", "predict_xpinn", "adam_opt", "lbfgs_opt"]
 

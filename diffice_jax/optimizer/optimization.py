@@ -12,45 +12,6 @@ from jax.debug import callback as call
 from tensorflow_probability.substrates import jax as tfp
 import functools
 
-def calc_eqn_err(lossf, params, x):
-    """Used for adaptive sampling."""
-    _, loss_info = lax.stop_gradient(lossf(params, x))
-    return loss_info[1]
-
-def eval_RAD_probs(key, params, dataf, lossf, adaptive_regions=None):
-    data = dataf(key, eval_adaptive=True)
-    eqn_err = calc_eqn_err(lossf, params, data)
-    
-    # Check if eqn_err is a list (XPINN) or array (PINN)
-    if isinstance(eqn_err, list):
-         # XPINN case
-        probs_list = []
-        for i, err_item in enumerate(eqn_err):
-            # Check if this region should be adaptive
-            # Default to True if adaptive_regions is None or not specified for this index
-            # is_adaptive = True
-            # if adaptive_regions is not None:
-            #     if isinstance(adaptive_regions, list) and i < len(adaptive_regions):
-            #         is_adaptive = adaptive_regions[i]
-            #     elif isinstance(adaptive_regions, dict):
-            #         is_adaptive = adaptive_regions.get(i, True)
-            
-            # if not is_adaptive:
-            #     probs_list.append(None)
-            # else:
-            # err_item is (N, ...)
-            err_sq = jnp.sum(jnp.square(err_item), axis=1)
-            p = err_sq / jnp.mean(err_sq) + 1
-            p /= jnp.sum(p)
-            probs_list.append(p)
-        return probs_list
-    else:
-        # PINN case
-        eqn_err = jnp.sum(jnp.square(eqn_err), axis=1)
-        probs = eqn_err/jnp.mean(eqn_err) + 1 
-        probs /= jnp.sum(probs)
-        return probs 
-
 
 # create the Adam minimizer
 @functools.partial(jit, static_argnames=("lossf", "opt"))
@@ -63,7 +24,8 @@ def adam_minimizer(lossf, params, data, opt, opt_state):
 
 
 def adam_optimizer(key, lossf, params, dataf, epoch, lr=1e-3, aniso=False, schdul=None,
-                   adaptive=False, adapt_period=500):
+                   eval_f=None, 
+                   adaptive=False, adapt_period=500, adapt_burnin=20000):
     """using the adam optimizer for the training.
 
     Args:
@@ -95,31 +57,28 @@ def adam_optimizer(key, lossf, params, dataf, epoch, lr=1e-3, aniso=False, schdu
     loss_all = []
     nc = jnp.int32(jnp.round(epoch / 5))
     if adaptive:
-        x_col_tmp = None
+        x_col_mem = None
         adapted = False
+
     # start the training iteration
     for step in range(epoch):
         # don't adapt in early training stages (first 10% of the epochs)
-        adapt_sample = (step+1)%adapt_period==0 and (step+1)>20000 and adaptive
-
-        # Evaluate RAD pdf for adaptive sampling
-        if adapt_sample:
-            probs = eval_RAD_probs(key, params, dataf, lossf)
-            print(f"epoch {step+1}, adapting sample based on residue")
-            adapted=True
+        run_RAD = (step+1)%adapt_period==0 and (step+1)>adapt_burnin and adaptive
 
         # split the new key for randomization
         key = random.split(key, 1)[0]
 
         # re-sampling the data points
-        if adapt_sample:
-            data = dataf(key, adaptive_probs=probs)
-            # Store the adaptively sampled collocation points in a tmp variable 
+        if run_RAD:
+            print(f"epoch {step+1}, adapting sample based on residue")
+            adapted=True
+            data = dataf(key, eval_adaptive=True, eval_f=lambda x, idx, basal: eval_f(params, x, idx, basal))
+            # Memorize the adaptively sampled collocation points in a tmp variable 
             # to keep it unchanged for adapt_period epochs
-            x_col_tmp = data['col'][0]
-        if not adapt_sample and adaptive and adapted:
-            data = dataf(key)
-            data['col'][0] = x_col_tmp
+            x_col_mem = data['col'][0]
+        elif adaptive and adapted:
+            data = dataf(key, eval_adaptive=False)
+            data['col'][0] = x_col_mem
         else:
             data = dataf(key)
         
@@ -162,7 +121,6 @@ def adam_optimizer(key, lossf, params, dataf, epoch, lr=1e-3, aniso=False, schdu
         loss_all.append(loss_info[0][0:5] if len(loss_info.shape)>1 else loss_info[0:5])
         last_iter += 1
     if adaptive:
-        probs_last = eval_RAD_probs(key, params, dataf, lossf)
         return params, loss_all# , probs_last 
     else:
         return params, loss_all

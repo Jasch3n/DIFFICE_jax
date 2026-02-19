@@ -268,19 +268,6 @@ def predict(func_all, data_all, posi_all, idxcrop_all, idxgall, aniso=False, bas
     # stitch the output variables calculated in the grid of original thickness data into one matrix
     results_h = tree_map(lambda x: stitch(varsub_h[x], idxcrop_h, fullsize_h, idxgall), idxvars_h)
 
-    # check whether the sub-regions merge correctly
-    merge_check1 = jnp.nanmean(jnp.abs(results[0]-Xe)) < 1e-9
-    merge_check2 = jnp.nanmean(jnp.abs(results[1]-Ye)) < 1e-9
-    merge_check3 = jnp.nanmean(jnp.abs(results_h[0]-Xe_h)) < 1e-9
-    merge_check4 = jnp.nanmean(jnp.abs(results_h[1]-Ye_h)) < 1e-9
-    merge_check = merge_check1 & merge_check2 & merge_check3 & merge_check4
-    # if not correct, stop the code and show the error message
-    if not merge_check:
-        print("Merge check failed:")
-        print("x diff:", jnp.nanmean(jnp.abs(results[0]-Xe)))
-        print("y diff:", jnp.nanmean(jnp.abs(results[1]-Ye)))
-    # assert merge_check, "Sub-region merges fails. Please check the code."
-
     # group all the variables
     outvars = {"x": results[0], "y": results[1], "u_g": results[2], "v_g": results[3],
                "u": results[4], "v": results[5], "h": results[6],

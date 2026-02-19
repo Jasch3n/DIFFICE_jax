@@ -158,8 +158,8 @@ def adam_optimizer(key, lossf, params, dataf, epoch, lr=1e-3, aniso=False, schdu
         # minimize the loss function using Adam
         params, loss_info, opt_state = adam_minimizer(lossf, params, data, opt_Adam, opt_state)
         # saving the loss
-        llast = loss_info[0][0]
-        loss_all.append(loss_info[0][0:5])
+        llast = loss_info[0][0] if len(loss_info.shape)>1 else loss_info[0]
+        loss_all.append(loss_info[0][0:5] if len(loss_info.shape)>1 else loss_info[0:5])
         last_iter += 1
     if adaptive:
         probs_last = eval_RAD_probs(key, params, dataf, lossf)
@@ -229,7 +229,7 @@ def lbfgs_function(lossf, init_params, data, basal=False, print_rate=500):
         io_callback(
             _host_callback,
             (),              # callback returns nothing to device
-            loss_info,    # pass the metrics slice to host
+            loss_info if len(loss_info.shape)==1 else loss_info[0],    # pass the metrics slice to host
             ordered=True     # preserve step ordering across calls
         )
 

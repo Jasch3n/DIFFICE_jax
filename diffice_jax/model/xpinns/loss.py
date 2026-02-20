@@ -232,7 +232,7 @@ def loss_iso_create(solNN, eqn_all, scale, idxgall, lw, basal_mask=None):
         # jdb.print("mc1_err: {x}", x=mc1_err)
         # jdb.print("mc2_err: {x}", x=mc2_err)
         # [NOTE]: Turn on/off the different continuity terms as needed 
-        match_err = jnp.hstack([mc0_err, mc1_err*0.0, mc2_err*0.0])
+        match_err = jnp.hstack([mc0_err, mc1_err*0.8, mc2_err*0.0])
         return match_err
 
     # loss function used for the PINN training

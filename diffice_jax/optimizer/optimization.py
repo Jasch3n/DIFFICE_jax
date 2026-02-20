@@ -109,17 +109,18 @@ def adam_optimizer(key, lossf, params, dataf, epoch, lr=1e-3, aniso=False, schdu
     llast = lossend[-1]
     # guarantee the loss value in last iteration is smaller than anyone before
     last_iter = 0
-    while llast > lmin and last_iter<epoch:
-        # split the new key for randomization
-        key = random.split(key, 1)[0]
-        # re-sampling the data points
-        data = dataf(key)
-        # minimize the loss function using Adam
-        params, loss_info, opt_state = adam_minimizer(lossf, params, data, opt_Adam, opt_state)
-        # saving the loss
-        llast = loss_info[0][0] if len(loss_info.shape)>1 else loss_info[0]
-        loss_all.append(loss_info[0][0:5] if len(loss_info.shape)>1 else loss_info[0:5])
-        last_iter += 1
+    # while llast > lmin and last_iter<epoch:
+    #     # split the new key for randomization
+    #     key = random.split(key, 1)[0]
+    #     # re-sampling the data points
+    #     data = dataf(key)
+    #     # minimize the loss function using Adam
+    #     params, loss_info, opt_state = adam_minimizer(lossf, params, data, opt_Adam, opt_state)
+    #     # saving the loss
+    #     llast = loss_info[0][0] if len(loss_info.shape)>1 else loss_info[0]
+    #     loss_all.append(loss_info[0][0:5] if len(loss_info.shape)>1 else loss_info[0:5])
+    #     last_iter += 1
+
     if adaptive:
         return params, loss_all# , probs_last 
     else:

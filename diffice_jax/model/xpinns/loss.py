@@ -64,7 +64,7 @@ def loss_iso_create(solNN, eqn_all, scale, idxgall, lw, basal_mask=None):
     # Pass basal flag per region so grounded regions use rho*g (not rho*gd)
     all_info = jnp.array(tree_map(lambda x: sub_scale(scale[x], basal=basal_mask[x]), idxgall))
     scale_info = all_info[:, 0:7]
-    scale_nm = scale_info / jnp.mean(scale_info, axis=0)   # To do: check whether jnp.min or jnp.mean better
+    scale_nm = scale_info / jnp.max(scale_info, axis=0)   # To do: check whether jnp.min or jnp.mean better
     mean_nm = all_info[:, 7:]
     u0, v0, h0, mu0, du0, dh0, term0 = jnp.split(scale_nm, 7, axis=1)
     uvh0 = jnp.hstack([u0, v0, h0])
@@ -141,7 +141,7 @@ def loss_iso_create(solNN, eqn_all, scale, idxgall, lw, basal_mask=None):
 
             err_all = jnp.hstack([data_err_all, eqn_err, bd_err])
 
-        # err_all size: 5 (data) + 2 (eqn) + 2 (bd) = 9
+        # err_all size: 4 (data) + 2 (eqn) + 2 (bd) = 8
         return err_all
 
     # create the continuation loss constraint at the interface of adjacent subregions
@@ -228,10 +228,11 @@ def loss_iso_create(solNN, eqn_all, scale, idxgall, lw, basal_mask=None):
         mc0_err = jnp.mean(match_c0_err)
         mc1_err = jnp.mean(match_c1_err)
         mc2_err = jnp.mean(match_c2_err)
-        # jdb.print("mc0_err: {x}", x=mc0_err)
+        # jdb.print("mc0_err: {x} | mc1_err: {y} | mc2_err: {z}", x=mc0_err, y=mc1_err, z=mc2_err)
         # jdb.print("mc1_err: {x}", x=mc1_err)
         # jdb.print("mc2_err: {x}", x=mc2_err)
-        match_err = jnp.hstack([mc0_err, mc1_err*0.8, mc2_err*0.5])
+        # [NOTE]: Turn on/off the different continuity terms as needed 
+        match_err = jnp.hstack([mc0_err, mc1_err*0.0, mc2_err*0.0])
         return match_err
 
     # loss function used for the PINN training
@@ -250,16 +251,16 @@ def loss_iso_create(solNN, eqn_all, scale, idxgall, lw, basal_mask=None):
         data_w = jnp.array([1., 1., 0.6, 0.6])
         eqn_w = jnp.array([1., 1.])
         bd_w = jnp.array([1., 1.])
-        md_w = jnp.ones(match_err.shape[0])
+        md_w = jnp.array([1., 1., 1.])
         # group all the weight
         wgh_all = jnp.hstack([data_w, eqn_w, bd_w, md_w])
 
         # calculate the overall data loss and equation loss
         loss_each = err_all * wgh_all
-        loss_data = jnp.sum(loss_each[0:5])
-        loss_eqn = jnp.sum(loss_each[5:7])
-        loss_bd = jnp.sum(loss_each[7:9])
-        loss_md = jnp.sum(loss_each[9:])
+        loss_data = jnp.sum(loss_each[0:4])
+        loss_eqn = jnp.sum(loss_each[4:6])
+        loss_bd = jnp.sum(loss_each[6:8])
+        loss_md = jnp.sum(loss_each[8:])
         # jdb.print("loss_data: {x}", x=loss_data)
         # jdb.print("loss_eqn: {x}", x=loss_eqn)
         # jdb.print("loss_bd: {x}", x=loss_bd)

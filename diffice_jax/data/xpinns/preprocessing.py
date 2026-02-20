@@ -117,7 +117,6 @@ def normalize_each(data, idx, ng, basal=False):
     if basal:
         s_n = (s) / h_mean 
 
-
     # normalize the calving front position
     xct_n = (xct - x_mean) / x_range
     yct_n = (yct - y_mean) / y_range

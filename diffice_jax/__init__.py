@@ -17,6 +17,7 @@ from .model.xpinns.initialization import init_nets as init_xpinn
 
 from .model.pinns.networks import solu_create as solu_pinn
 from .model.xpinns.networks import solu_create as solu_xpinn
+from .model.xpinns.networks import msnn_solu_create as msnn_solu_xpinn
 
 from .model.pinns.loss import loss_iso_create as loss_iso_pinn
 from .model.pinns.loss import loss_aniso_create as loss_aniso_pinn
@@ -26,8 +27,13 @@ from .model.xpinns.loss import loss_aniso_create as loss_aniso_xpinn
 from .model.pinns.prediction import predict as predict_pinn
 from .model.xpinns.prediction import predict as predict_xpinn
 
+from .model.xpinns.initialization import init_correction_nets as init_correction_xpinn
+from .model.xpinns.msnn_config import MSNNConfig
+from .model.xpinns.residue import compute_equation_residue, estimate_kappa, estimate_epsilon, estimate_gamma
+
 from .optimizer.optimization import adam_optimizer as adam_opt
 from .optimizer.optimization import lbfgs_optimizer as lbfgs_opt
+from .optimizer.optimization import msnn_optimizer as msnn_opt
 
 __all__ = ["normdata_pinn", "normdata_xpinn", "dsample_pinn", "dsample_xpinn", 
            "plot_xpinn_data",

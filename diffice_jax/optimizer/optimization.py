@@ -115,7 +115,7 @@ def adam_optimizer(key, lossf, params, dataf, epoch, lr=1e-3, aniso=False, schdu
     else:
         print('[!] ADAM training did NOT complete at minimum loss, running until it is minimum.')
 
-    while False and last_iter<epoch:
+    while True and last_iter<epoch:
         # split the new key for randomization
         key = random.split(key, 1)[0]
         run_RAD = (last_iter+1)%adapt_period==0 and adaptive
@@ -259,6 +259,220 @@ def lbfgs_optimizer(lossf, params, data, epoch, basal=False, print_rate=1000):
     print(f" . . . Gradient inf-norm at termination: {jnp.max(jnp.abs(results.objective_gradient)):.6e}  (tolerance was 1e-15)")
     print(f" . . . Gradient L2-norm at termination:  {jnp.linalg.norm(results.objective_gradient):.6e}")
     return optimised_params, loss_all
+
+
+def msnn_optimizer(key, loss_factory, dataf, scale, gov_eqn, front_eqn,
+                   msnn_config, idxgall, lw, basal_mask=None,
+                   n_hl=4, n_unit=50, scl=1, aniso=False, lr=1e-3,
+                   pretrained_params=None):
+    """Multi-Stage Neural Network optimizer for X-PINNs.
+
+    Orchestrates the full MSNN training loop:
+      - Stage 0: Standard PINN (or use pretrained_params)
+      - Stages 1..K: Correction networks trained on residue
+
+    Args:
+        key: JAX PRNG key.
+        loss_factory: Callable(solNN, gamma_eq=None) -> loss_fn.
+                      A factory that creates the loss function given a solNN
+                      tuple and optional gamma_eq override.
+        dataf: Data sampling function.
+        scale: Scale info per sub-region.
+        gov_eqn: Governing equation function.
+        front_eqn: Front equation function.
+        msnn_config: MSNNConfig instance.
+        idxgall: List of sub-region indices.
+        lw: Loss weights [data, eqn, bd, md].
+        basal_mask: List of booleans per sub-region.
+        n_hl: Hidden layers for Stage 0 networks.
+        n_unit: Units per hidden layer for Stage 0 networks.
+        scl: Scale factor for Stage 0 networks.
+        aniso: Whether anisotropic viscosity.
+        lr: Learning rate for Adam.
+        pretrained_params: If provided, skip Stage 0 training and use these
+                           as the frozen Stage 0 parameters.
+
+    Returns:
+        all_stage_params: List of (params, epsilon_list, kappa) per stage.
+        all_loss_histories: List of loss histories per stage.
+    """
+    import sys
+    from diffice_jax.model.xpinns.initialization import init_nets, init_correction_nets
+    from diffice_jax.model.xpinns.networks import solu_create, msnn_solu_create
+    from diffice_jax.model.xpinns.residue import (
+        compute_equation_residue, estimate_kappa, estimate_epsilon, estimate_gamma
+    )
+
+    n_sub = len(idxgall)
+    if basal_mask is None:
+        basal_mask = [False] * n_sub
+
+    all_stage_params = []  # (params, epsilon_list, kappa)
+    all_loss_histories = []
+
+    # ====== Stage 0: Standard PINN Training ======
+    if pretrained_params is not None:
+        print("=" * 60, file=sys.stderr)
+        print("MSNN Stage 0: Using pre-trained parameters (skipping training)",
+              file=sys.stderr)
+        print("=" * 60, file=sys.stderr)
+        stage0_params = pretrained_params
+        all_loss_histories.append([])  # empty loss history
+    else:
+        print("=" * 60, file=sys.stderr)
+        print("MSNN Stage 0: Standard PINN Training", file=sys.stderr)
+        print("=" * 60, file=sys.stderr)
+
+        key, subkey = random.split(key)
+        stage0_params = init_nets(subkey, n_hl, n_unit, n_sub=n_sub,
+                                  aniso=aniso, basal_mask=basal_mask)
+
+        # Create standard solNN
+        solNN_0 = solu_create(scale, scl=scl, basal_mask=basal_mask)
+        # Create loss function
+        loss_fn_0 = loss_factory(solNN_0, gamma_eq=None)
+        loss_fn_0.lref = 1.0
+
+        # Compute initial reference loss
+        key, subkey = random.split(key)
+        data0 = dataf(subkey)
+        _, loss_info_0 = loss_fn_0(stage0_params, data0)
+        loss_fn_0.lref = loss_info_0[0] if len(loss_info_0.shape) == 1 else loss_info_0[0][0]
+
+        # Adam training (use first element of stage_epochs if > n_stages epochs provided)
+        stage0_epochs = msnn_config.stage_epochs[0] if len(msnn_config.stage_epochs) > msnn_config.n_stages else 50000
+        key, subkey = random.split(key)
+        stage0_params, loss0 = adam_optimizer(
+            subkey, loss_fn_0, stage0_params, dataf, stage0_epochs, lr=lr, aniso=aniso)
+        all_loss_histories.append(loss0)
+
+        # Optional L-BFGS
+        if len(msnn_config.use_lbfgs) > msnn_config.n_stages and msnn_config.use_lbfgs[0]:
+            key, subkey = random.split(key)
+            data_lbfgs = dataf(subkey)
+            stage0_params, loss0_lbfgs = lbfgs_optimizer(
+                loss_fn_0, stage0_params, data_lbfgs,
+                msnn_config.lbfgs_epochs, basal=any(basal_mask))
+
+    # Stage 0 epsilon is implicitly 1.0 (no prefactor)
+    eps0 = [1.0] * n_sub
+    all_stage_params.append((stage0_params, eps0, scl))
+
+    # ====== Higher Stages: Correction Networks ======
+    for stage_k in range(1, msnn_config.n_stages + 1):
+        print("=" * 60, file=sys.stderr)
+        print(f"MSNN Stage {stage_k}: Correction Network Training", file=sys.stderr)
+        print("=" * 60, file=sys.stderr)
+
+        # --- Step 1: Compute equation residue per sub-region ---
+        # For stage 1, use standard solu_create to avoid dimension mismatch
+        # (Stage 0 params have different architecture than correction nets).
+        # For later stages, msnn_solu_create with eps=0 is now safe (skips active).
+        if stage_k == 1:
+            pred_residue, _ = solu_create(scale, scl=scl, basal_mask=basal_mask)
+            residue_params = stage0_params
+        else:
+            prev_solNN = msnn_solu_create(
+                scale, frozen_stages=all_stage_params,
+                active_epsilon=[0.0] * n_sub,
+                active_kappa=1.0, scl=scl, basal_mask=basal_mask)
+            pred_residue = prev_solNN[0]
+            residue_params = stage0_params  # dummy, won't be used (eps=0)
+
+        # Sample dense collocation points for residue analysis
+        key, subkey = random.split(key)
+        data_residue = dataf(subkey)
+
+        kappa_per_region = []
+        epsilon_per_region = []
+        fd_per_region = []
+
+        for i in idxgall:
+            x_col_i = data_residue['col'][0][i]
+            residue_i = compute_equation_residue(
+                pred_residue, gov_eqn, scale, residue_params, x_col_i, i,
+                basal=basal_mask[i])
+
+            # --- Step 2: Estimate κ ---
+            domain_range = scale[i][1]
+            kappa_i, fd_i = estimate_kappa(
+                residue_i, x_col_i, domain_range,
+                msnn_config.correction_n_hl, msnn_config.correction_n_unit,
+                kappa_multiplier=msnn_config.kappa_multiplier)
+
+            # --- Step 3: Estimate ε ---
+            epsilon_i = estimate_epsilon(residue_i, fd_i, pde_order=2)
+
+            kappa_per_region.append(kappa_i)
+            epsilon_per_region.append(epsilon_i)
+            fd_per_region.append(fd_i)
+
+            print(f"  Region {i}: f_d={fd_i:.2f}, κ={kappa_i:.2f}, ε={epsilon_i:.4e}",
+                  file=sys.stderr)
+
+        # Use the max kappa across regions for the correction net scale
+        active_kappa = max(kappa_per_region)
+
+        # --- Step 4: Initialize correction networks ---
+        key, subkey = random.split(key)
+        corr_params = init_correction_nets(
+            subkey, msnn_config.correction_n_hl, msnn_config.correction_n_unit,
+            n_sub, kappa_per_region, aniso=aniso, basal_mask=basal_mask)
+
+        # --- Step 5: Build combined ansatz with frozen previous + active current ---
+        solNN_k = msnn_solu_create(
+            scale, frozen_stages=all_stage_params,
+            active_epsilon=epsilon_per_region,
+            active_kappa=active_kappa, scl=scl, basal_mask=basal_mask)
+
+        # --- Step 6: Estimate γ and create loss function ---
+        # Get current loss values for gamma estimation
+        key, subkey = random.split(key)
+        data_gamma = dataf(subkey)
+        # Use a temporary loss fn to evaluate current data vs eqn loss
+        temp_loss_fn = loss_factory(solNN_k, gamma_eq=None)
+        temp_loss_fn.lref = 1.0
+        _, temp_info = temp_loss_fn(corr_params, data_gamma)
+        loss_data_val = temp_info[1] if len(temp_info.shape) == 1 else temp_info[0][1]
+        loss_eqn_val = temp_info[2] if len(temp_info.shape) == 1 else temp_info[0][2]
+        gamma_eq = estimate_gamma(float(loss_data_val), float(loss_eqn_val))
+        print(f"  Estimated γ = {gamma_eq:.4f}", file=sys.stderr)
+
+        # Create the actual loss function with gamma_eq
+        loss_fn_k = loss_factory(solNN_k, gamma_eq=gamma_eq)
+        loss_fn_k.lref = 1.0
+
+        # Compute initial reference loss for this stage
+        _, loss_info_k = loss_fn_k(corr_params, data_gamma)
+        loss_fn_k.lref = loss_info_k[0] if len(loss_info_k.shape) == 1 else loss_info_k[0][0]
+
+        # --- Step 7: Train correction network ---
+        stage_epochs_k = msnn_config.stage_epochs[stage_k - 1]
+        key, subkey = random.split(key)
+        corr_params, loss_k = adam_optimizer(
+            subkey, loss_fn_k, corr_params, dataf, stage_epochs_k, lr=lr, aniso=aniso)
+        all_loss_histories.append(loss_k)
+
+        # Optional L-BFGS for this stage
+        if msnn_config.use_lbfgs[stage_k - 1]:
+            key, subkey = random.split(key)
+            data_lbfgs_k = dataf(subkey)
+            corr_params, loss_k_lbfgs = lbfgs_optimizer(
+                loss_fn_k, corr_params, data_lbfgs_k,
+                msnn_config.lbfgs_epochs, basal=any(basal_mask))
+
+        # Freeze this stage
+        all_stage_params.append((corr_params, epsilon_per_region, active_kappa))
+
+        # Report stage result
+        final_loss = loss_k[-1][0] if len(loss_k) > 0 else float('nan')
+        print(f"  Stage {stage_k} complete. Final loss: {final_loss:.4e}", file=sys.stderr)
+
+    print("=" * 60, file=sys.stderr)
+    print(f"MSNN Training Complete — {len(all_stage_params)} stages total", file=sys.stderr)
+    print("=" * 60, file=sys.stderr)
+
+    return all_stage_params, all_loss_histories
 
 # A factory to create a function required by tfp.optimizer.lbfgs_minimize.
 # def lbfgs_function(lossf, init_params, data, basal=False, print_rate=500):

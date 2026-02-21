@@ -43,10 +43,13 @@ def u_mag(u):
 
 #%% loss for inferring isotropic viscosity
 
-def loss_iso_create(solNN, eqn_all, scale, idxgall, lw, basal_mask=None):
+def loss_iso_create(solNN, eqn_all, scale, idxgall, lw, basal_mask=None, gamma_eq=None):
     ''' a function factory to create the loss function for isotropic analysis
     :param solNN: neural network function for solutions and its derivative [tuple(callable, callable)]
     :param eqn_all: include governing equation and boundary equation of SSA [tuple(callable, callable)]
+    :param gamma_eq: optional equation weight override for MSNN higher stages.
+                     If provided, loss = (1-gamma_eq)*loss_data + gamma_eq*loss_eqn.
+                     If None, uses the standard lw-based weighting.
     :return: a loss function (callable)
     '''
 
@@ -284,7 +287,14 @@ def loss_iso_create(solNN, eqn_all, scale, idxgall, lw, basal_mask=None):
         # load the (possibly mutated) loss weights
         _lw = loss_fun.lw
         # calculate the total loss
-        loss = (_lw[0] * loss_data + _lw[1] * loss_eqn + _lw[2] * loss_bd + _lw[3] * loss_md)
+        _gamma_eq = loss_fun.gamma_eq
+        if _gamma_eq is not None:
+            # MSNN mode: use gamma_eq to balance data vs equation loss
+            loss = ((1.0 - _gamma_eq) * (loss_data + loss_bd + loss_md)
+                    + _gamma_eq * loss_eqn)
+        else:
+            # Standard mode
+            loss = (_lw[0] * loss_data + _lw[1] * loss_eqn + _lw[2] * loss_bd + _lw[3] * loss_md)
         # normalize the loss by the initial reference value
         loss_n = loss / loss_ref
         # group the loss of all conditions and equations
@@ -295,6 +305,8 @@ def loss_iso_create(solNN, eqn_all, scale, idxgall, lw, basal_mask=None):
     loss_fun.lref = 1.0
     # store loss weights as mutable attribute (can be updated between stages)
     loss_fun.lw = jnp.array(lw)
+    # store MSNN gamma_eq (None = standard mode)
+    loss_fun.gamma_eq = gamma_eq
 
     return loss_fun
 

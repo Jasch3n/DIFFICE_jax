@@ -70,7 +70,7 @@ def adam_optimizer(key, lossf, params, dataf, epoch, lr=1e-3, aniso=False, schdu
 
         # re-sampling the data points
         if run_RAD:
-            print(f"epoch {step+1}, adapting sample based on residue")
+            print(f" . . . . . . epoch {step+1}, adapting sample based on residual")
             adapted=True
             data = dataf(key, eval_adaptive=True, eval_f=lambda x, idx, basal: eval_f(params, x, idx, basal))
             # Memorize the adaptively sampled collocation points in a tmp variable 
@@ -115,12 +115,12 @@ def adam_optimizer(key, lossf, params, dataf, epoch, lr=1e-3, aniso=False, schdu
     else:
         print('[!] ADAM training did NOT complete at minimum loss, running until it is minimum.')
 
-    while True and last_iter<epoch:
+    while False and last_iter<epoch:
         # split the new key for randomization
         key = random.split(key, 1)[0]
         run_RAD = (last_iter+1)%adapt_period==0 and adaptive
         if run_RAD:
-            print(f"last_iter {last_iter+1}, adapting sample based on residue")
+            print(f"last_iter {last_iter+1}, adapting sample based on residual")
             adapted=True
             data = dataf(key, eval_adaptive=True, eval_f=lambda x, idx, basal: eval_f(params, x, idx, basal))
             # Memorize the adaptively sampled collocation points in a tmp variable 
@@ -240,8 +240,9 @@ def lbfgs_optimizer(lossf, params, data, epoch, basal=False, print_rate=1000):
     results = tfp.optimizer.lbfgs_minimize(
         value_and_gradients_function=func_lbfgs,
         initial_position=init_params_1d,
-        tolerance=1e-15,
+        tolerance=1e-8,
         max_iterations=max_nIter,
+        num_correction_pairs=100
     )
 
     # Recover pytree params from optimised 1D position

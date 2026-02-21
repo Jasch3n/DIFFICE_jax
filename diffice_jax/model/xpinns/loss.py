@@ -33,7 +33,7 @@ def sub_scale(scale, basal=False):
     mu0 = rho * g_eff * h0 * (l0m / u0m)
     du0 = u0m / l0m
     dh0 = h0 / l0m
-    term0 = h0**2 / l0m
+    term0 = h0**2 / l0m if basal else h0**2 / l0m * (1 - rho/rho_w)
     return u0, v0, h0, mu0, du0, dh0, term0, um/u0, vm/v0
 
 
@@ -218,10 +218,24 @@ def loss_iso_create(solNN, eqn_all, scale, idxgall, lw, basal_mask=None):
         term_md1 = fgovterm(x_md[:, 0:2], idx, is_basal_1)[:, 0:-1] * term0[idx]
         # calculate equation residue in sub-region 2 at the interface
         term_md2 = fgovterm(x_md[:, 2:4], idx + 1, is_basal_2)[:, 0:-1] * term0[idx + 1]
-        # match the viscous terms     
-        if not basal_mask is None:
+        # match terms depending on interface type
+        if is_basal_1 != is_basal_2:
+            # Grounded-floating interface: match only viscous terms (cols 0,1,3,4)
+            # Skip driving stress terms (col 2: e1term3, col 5: e2term3)
+            # which represent different physics on each side.
+            # Also scale by mu0 to convert to consistent physical units,
+            # since mu0 differs ~10x between floating (gd) and grounded (g).
+            visc_idx = jnp.array([0, 1, 3, 4])
+            visc_md1 = term_md1[:, visc_idx]
+            visc_md2 = term_md2[:, visc_idx]
+            match_c2_err = ms_error(
+                nthrt(visc_md1, 2) - nthrt(visc_md2, 2)
+            )
+        elif basal_mask is not None:
+            # Same-type interface with basal regions: match first 6 terms
             match_c2_err = ms_error(nthrt(term_md1[:, 0:6], 2) - nthrt(term_md2[:, 0:6], 2))
         else:
+            # No basal regions at all: match all terms
             match_c2_err = ms_error(nthrt(term_md1, 2) - nthrt(term_md2, 2))
 
         # group all the stitched conditions
@@ -232,7 +246,7 @@ def loss_iso_create(solNN, eqn_all, scale, idxgall, lw, basal_mask=None):
         # jdb.print("mc1_err: {x}", x=mc1_err)
         # jdb.print("mc2_err: {x}", x=mc2_err)
         # [NOTE]: Turn on/off the different continuity terms as needed 
-        match_err = jnp.hstack([mc0_err, mc1_err*0.8, mc2_err*0.0])
+        match_err = jnp.hstack([mc0_err, mc1_err*0.8, mc2_err*0.2])
         return match_err
 
     # loss function used for the PINN training

@@ -231,7 +231,14 @@ def lbfgs_optimizer(lossf, params, data, epoch, basal=False, print_rate=1000):
     num_iter = results.num_objective_evaluations
     loss_all = func_lbfgs.loss
 
-    print(f"Total iterations: {num_iter}")
+    print('L-BFGS Terminated.')
+    print(f" . . . Total iterations: {num_iter}")
+    print(f" . . . Converged (gradient norm < tolerance): {results.converged}")
+    print(f" . . . Failed (line search or other failure): {results.failed}")
+    print(f" . . . Iterations used / max allowed: {results.num_iterations} / {max_nIter}")
+    print(f" . . . Final loss value: {results.objective_value:.6e}")
+    print(f" . . . Gradient inf-norm at termination: {jnp.max(jnp.abs(results.objective_gradient)):.6e}  (tolerance was 1e-15)")
+    print(f" . . . Gradient L2-norm at termination:  {jnp.linalg.norm(results.objective_gradient):.6e}")
     return optimised_params, loss_all
 
 # A factory to create a function required by tfp.optimizer.lbfgs_minimize.

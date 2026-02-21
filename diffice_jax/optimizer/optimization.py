@@ -115,7 +115,7 @@ def adam_optimizer(key, lossf, params, dataf, epoch, lr=1e-3, aniso=False, schdu
     else:
         print('[!] ADAM training did NOT complete at minimum loss, running until it is minimum.')
 
-    while True and last_iter<epoch:
+    while llast <= lmin and last_iter<epoch:
         # split the new key for randomization
         key = random.split(key, 1)[0]
         run_RAD = (last_iter+1)%adapt_period==0 and adaptive

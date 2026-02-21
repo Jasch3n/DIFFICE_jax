@@ -109,17 +109,35 @@ def adam_optimizer(key, lossf, params, dataf, epoch, lr=1e-3, aniso=False, schdu
     llast = lossend[-1]
     # guarantee the loss value in last iteration is smaller than anyone before
     last_iter = 0
-    # while llast > lmin and last_iter<epoch:
-    #     # split the new key for randomization
-    #     key = random.split(key, 1)[0]
-    #     # re-sampling the data points
-    #     data = dataf(key)
-    #     # minimize the loss function using Adam
-    #     params, loss_info, opt_state = adam_minimizer(lossf, params, data, opt_Adam, opt_state)
-    #     # saving the loss
-    #     llast = loss_info[0][0] if len(loss_info.shape)>1 else loss_info[0]
-    #     loss_all.append(loss_info[0][0:5] if len(loss_info.shape)>1 else loss_info[0:5])
-    #     last_iter += 1
+
+    if llast <= lmin: 
+        print('[!] ADAM training completed at minimum loss, continuing ...')
+    else:
+        print('[!] ADAM training did NOT complete at minimum loss, running until it is minimum.')
+
+    while True and last_iter<epoch:
+        # split the new key for randomization
+        key = random.split(key, 1)[0]
+        run_RAD = (last_iter+1)%adapt_period==0 and adaptive
+        if run_RAD:
+            print(f"last_iter {last_iter+1}, adapting sample based on residue")
+            adapted=True
+            data = dataf(key, eval_adaptive=True, eval_f=lambda x, idx, basal: eval_f(params, x, idx, basal))
+            # Memorize the adaptively sampled collocation points in a tmp variable 
+            # to keep it unchanged for adapt_period epochs
+            x_col_mem = data['col'][0]
+        elif adaptive and adapted:
+            data = dataf(key, eval_adaptive=False)
+            data['col'][0] = x_col_mem
+        else:
+            data = dataf(key)
+
+        # minimize the loss function using Adam
+        params, loss_info, opt_state = adam_minimizer(lossf, params, data, opt_Adam, opt_state)
+        # saving the loss
+        llast = loss_info[0][0] if len(loss_info.shape)>1 else loss_info[0]
+        loss_all.append(loss_info[0][0:5] if len(loss_info.shape)>1 else loss_info[0:5])
+        last_iter += 1
 
     if adaptive:
         return params, loss_all# , probs_last 

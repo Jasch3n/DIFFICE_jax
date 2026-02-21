@@ -110,10 +110,13 @@ def adam_optimizer(key, lossf, params, dataf, epoch, lr=1e-3, aniso=False, schdu
     # guarantee the loss value in last iteration is smaller than anyone before
     last_iter = 0
 
+    run_til_min = False
+
     if llast <= lmin: 
         print('[!] ADAM training completed at minimum loss, continuing ...')
     else:
         print('[!] ADAM training did NOT complete at minimum loss, running until it is minimum.')
+        run_til_min = True
 
     while llast <= lmin and last_iter<epoch:
         # split the new key for randomization
@@ -138,6 +141,10 @@ def adam_optimizer(key, lossf, params, dataf, epoch, lr=1e-3, aniso=False, schdu
         llast = loss_info[0][0] if len(loss_info.shape)>1 else loss_info[0]
         loss_all.append(loss_info[0][0:5] if len(loss_info.shape)>1 else loss_info[0:5])
         last_iter += 1
+
+    if run_til_min:
+        print(f'[!] ADAM training completed at minimum loss after burning out for {last_iter} iterations.')
+
 
     if adaptive:
         return params, loss_all# , probs_last 

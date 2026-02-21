@@ -24,16 +24,16 @@ def sub_scale(scale, basal=False):
     dmean, drange = scale
     lx0, ly0, u0, v0 = drange[0:4]
     um, vm, h0 = dmean[2:5]
-    # find the maximum velocity and length scale
+    
     u0m = lax.max(u0, v0)
-    l0m = lax.max(lx0, ly0)
+    l0m = lax.min(lx0, ly0)
     # calculate the scale of viscosity and strain rate
     # Use full gravity for grounded ice (matching PINN behavior)
     g_eff = g if basal else gd
     mu0 = rho * g_eff * h0 * (l0m / u0m)
     du0 = u0m / l0m
     dh0 = h0 / l0m
-    term0 = h0**2 / l0m if basal else h0**2 / l0m * (1 - rho/rho_w)
+    term0 = mu0 * g_eff * h0 * u0 / l0m**2
     return u0, v0, h0, mu0, du0, dh0, term0, um/u0, vm/v0
 
 
@@ -226,8 +226,6 @@ def loss_iso_create(solNN, eqn_all, scale, idxgall, lw, basal_mask=None, gamma_e
             # Grounded-floating interface: match only viscous terms (cols 0,1,3,4)
             # Skip driving stress terms (col 2: e1term3, col 5: e2term3)
             # which represent different physics on each side.
-            # Also scale by mu0 to convert to consistent physical units,
-            # since mu0 differs ~10x between floating (gd) and grounded (g).
             visc_idx = jnp.array([0, 1, 3, 4])
             visc_md1 = term_md1[:, visc_idx]
             visc_md2 = term_md2[:, visc_idx]

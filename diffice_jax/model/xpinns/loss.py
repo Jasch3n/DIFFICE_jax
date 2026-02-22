@@ -34,8 +34,11 @@ def sub_scale(scale, basal=False):
     du0 = u0m / l0m
     dh0 = h0 / l0m
 
-    # [TODO]: Figure out what the right expression for term 0 is 
-    term0 = mu0 * g_eff * h0 * u0 / l0m**2
+    # [TODO]: Figure out what the right expression for term 0 is ...
+    if basal:
+        term0 = h0**2 / l0m # This captures the physical scaling without the density and gravity (it is therefore O(1))
+    else:
+        term0 = (1-rho/rho_w) * h0**2 / l0m
     return u0, v0, h0, mu0, du0, dh0, term0, um/u0, vm/v0
 
 

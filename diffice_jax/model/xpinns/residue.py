@@ -129,6 +129,66 @@ def estimate_epsilon(residue_values, f_d, pde_order=2):
     return epsilon
 
 
+def estimate_epsilon_per_variable(predNN, params, data, scale, idx, basal=False):
+    """Estimate per-variable ε from RMSE between network prediction and data.
+
+    Instead of using FFT-based frequency analysis on the PDE residue,
+    this computes the root-mean-square deviation of each predicted variable
+    from the corresponding data.  Each correction-network output column is
+    then scaled by its own ε at runtime.
+
+    Args:
+        predNN: Forward prediction function  (params, x, idx) -> solution.
+        params: Network parameters for the current (frozen) stages.
+        data: Data dict produced by the sampling function.
+        scale: Scale info list, indexed by sub-region.
+        idx: Sub-region index.
+        basal: Whether this sub-region is grounded.
+
+    Returns:
+        epsilon_arr: jnp array of shape (n_uvh,) with per-variable ε values.
+                     n_uvh = 4 if basal else 3  (u, v, h[, s]).
+    """
+    import numpy as np
+
+    # — Velocity comparison —
+    x_smp = data['smp'][0][idx]
+    u_smp = data['smp'][1][idx]          # (N, 2)  columns: u, v
+    u_pred = predNN(params, x_smp, idx)[:, 0:2]
+
+    eps_u = float(jnp.sqrt(jnp.mean(jnp.square(u_pred[:, 0] - u_smp[:, 0]))))
+    eps_v = float(jnp.sqrt(jnp.mean(jnp.square(u_pred[:, 1] - u_smp[:, 1]))))
+
+    # — Thickness comparison —
+    xh_smp = data['smp'][2][idx]
+    h_smp  = data['smp'][3][idx]         # (N, 1)
+    h_pred = predNN(params, xh_smp, idx)[:, 2:3]
+
+    eps_h = float(jnp.sqrt(jnp.mean(jnp.square(h_pred - h_smp))))
+
+    if basal:
+        # — Surface elevation (s) comparison —
+        s_smp  = data['smp'][4][idx]     # (N, 1)
+        s_pred = predNN(params, xh_smp, idx)[:, 3:4]
+        eps_s  = float(jnp.sqrt(jnp.mean(jnp.square(s_pred - s_smp))))
+        eps_list = [eps_u, eps_v, eps_h, eps_s]
+    else:
+        eps_list = [eps_u, eps_v, eps_h]
+
+    # Clamp to a small positive floor to avoid division by zero / zero scaling
+    eps_list = [max(e, 1e-12) for e in eps_list]
+
+    # Append eps_mu (and eps_c for grounded) as the average of the uvh(s) epsilons.
+    # These scale the log-viscosity and log-basal-friction correction networks
+    # to prevent equation loss spikes when transitioning to correction stages.
+    eps_avg = float(np.mean(eps_list))
+    eps_list.append(eps_avg)  # eps_mu
+    if basal:
+        eps_list.append(eps_avg)  # eps_c
+
+    return jnp.array(eps_list)
+
+
 def estimate_gamma(loss_data, loss_eqn):
     """Estimate the equation weight γ for balanced convergence.
 

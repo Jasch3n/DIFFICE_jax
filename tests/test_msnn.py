@@ -21,7 +21,8 @@ from diffice_jax.model.xpinns.initialization import init_nets, init_correction_n
 from diffice_jax.model.xpinns.networks import solu_create, msnn_solu_create, neural_net
 from diffice_jax.model.xpinns.loss import loss_iso_create
 from diffice_jax.model.xpinns.residue import (
-    compute_equation_residue, estimate_kappa, estimate_epsilon, estimate_gamma
+    compute_equation_residue, estimate_kappa, estimate_epsilon,
+    estimate_epsilon_per_variable, estimate_gamma
 )
 from diffice_jax.model.xpinns.msnn_config import MSNNConfig
 from diffice_jax.equation.eqn_iso import gov_eqn, front_eqn
@@ -167,7 +168,9 @@ def test_msnn_forward_pass():
 
     # Create correction net params
     kappa_per_region = [3.0, 3.0]
-    eps_per_region = [0.01, 0.01]
+    # Per-variable epsilon arrays: floating has 4 entries (u,v,h,mu), grounded has 6 (u,v,h,s,mu,c)
+    eps_per_region = [jnp.array([0.01, 0.01, 0.01, 0.01]),          # floating: u, v, h, mu
+                      jnp.array([0.01, 0.01, 0.01, 0.01, 0.01, 0.01])]  # grounded: u, v, h, s, mu, c
     key, subkey = random.split(key)
     corr_params = init_correction_nets(
         subkey, 2, 10, 2, kappa_per_region, basal_mask=basal_mask)
@@ -179,17 +182,28 @@ def test_msnn_forward_pass():
         active_epsilon=eps_per_region,
         active_kappa=3.0, scl=1, basal_mask=basal_mask)
 
-    # Combined prediction should differ from Stage 0 alone
-    pred_combined = msnn_pred(corr_params, x_test, 0)
+    # Combined prediction should initially equal Stage 0 (correction nets are zero-initialized)
+    pred_combined_init = msnn_pred(corr_params, x_test, 0)
+    diff_init = jnp.sum(jnp.abs(pred_combined_init - pred_stage0))
+    print(f"  Stage0 vs Combined (at init, zero-init correction): {diff_init:.6f}")
+    assert diff_init < 1e-5, "Zero-initialized correction should not change Stage 0 prediction"
+
+    # Perturb correction params so they produce non-zero output
+    import copy
+    perturbed_params = copy.deepcopy(corr_params)
+    perturbed_params['net_u'][0][-1][0] = jnp.ones_like(perturbed_params['net_u'][0][-1][0]) * 0.1
+    perturbed_params['net_u'][0][-1][1] = jnp.ones_like(perturbed_params['net_u'][0][-1][1]) * 0.1
+
+    pred_combined = msnn_pred(perturbed_params, x_test, 0)
     diff = jnp.sum(jnp.abs(pred_combined - pred_stage0))
-    print(f"  Stage0 vs Combined difference: {diff:.6f}")
-    assert diff > 1e-6, "Combined prediction should differ from Stage 0 alone"
+    print(f"  Stage0 vs Combined (perturbed): {diff:.6f}")
+    assert diff > 1e-6, "Combined prediction with perturbed correction should differ from Stage 0"
 
     # Verify gradient only flows through active params
     def loss_fn(params):
         return jnp.sum(msnn_pred(params, x_test, 0))
 
-    grads = jax.grad(loss_fn)(corr_params)
+    grads = jax.grad(loss_fn)(perturbed_params)
 
     # Active correction net_u should have non-zero gradients
     grad_sum_active = sum(float(jnp.sum(jnp.abs(g)))
@@ -250,9 +264,29 @@ def test_estimation_functions():
     assert f_d > 0, "Dominant frequency should be positive"
     assert kappa > 0, "κ should be positive"
 
+    # Old scalar epsilon (still available but deprecated for MSNN)
     epsilon = estimate_epsilon(residue, f_d, pde_order=2)
-    print(f"  Estimated ε: {epsilon:.4e}")
+    print(f"  Estimated scalar ε: {epsilon:.4e}")
     assert epsilon > 0, "ε should be positive"
+
+    # New per-variable epsilon
+    key2, n_hl2, n_unit2, params2, scale2, basal_mask2, data2, N2 = make_test_setup()
+    solNN_test = solu_create(scale2, scl=1, basal_mask=basal_mask2)
+    predNN_test, _ = solNN_test
+
+    # Floating region (idx=0): should return 3 epsilons (u, v, h)
+    eps_float = estimate_epsilon_per_variable(
+        predNN_test, params2, data2, scale2, 0, basal=False)
+    print(f"  Per-variable ε (floating): {eps_float}")
+    assert eps_float.shape == (4,), f"Expected shape (4,), got {eps_float.shape}"  # u, v, h, mu
+    assert jnp.all(eps_float > 0), "All ε should be positive"
+
+    # Grounded region (idx=1): should return 4 epsilons (u, v, h, s)
+    eps_ground = estimate_epsilon_per_variable(
+        predNN_test, params2, data2, scale2, 1, basal=True)
+    print(f"  Per-variable ε (grounded): {eps_ground}")
+    assert eps_ground.shape == (6,), f"Expected shape (6,), got {eps_ground.shape}"  # u, v, h, s, mu, c
+    assert jnp.all(eps_ground > 0), "All ε should be positive"
 
     gamma = estimate_gamma(0.5, 0.5)
     assert abs(gamma - 0.5) < 1e-6, f"γ should be 0.5, got {gamma}"

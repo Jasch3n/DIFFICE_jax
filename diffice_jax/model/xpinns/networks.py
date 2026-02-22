@@ -98,17 +98,25 @@ def msnn_solu_create(scale, frozen_stages, active_epsilon, active_kappa,
     """Create a multi-stage prediction function (MSNN combined ansatz).
 
     The combined prediction is:
-        u_combined(x) = u_0(x) + Σ_{k=1}^{K-1} ε_k · u_k(x, κ_k)  [frozen]
-                      + ε_K · u_K(x, κ_K)                          [active, trained]
+        u_combined(x) = u_0(x) + Σ_{k=1}^{K-1} ε_k ⊙ u_k(x, κ_k)  [frozen]
+                      + ε_K ⊙ u_K(x, κ_K)                          [active, trained]
+
+    where ⊙ denotes element-wise (per-variable) scaling.
+    Epsilon arrays also include eps_mu (and eps_c for grounded) so that
+    log-viscosity and log-basal-friction corrections are also scaled.
 
     Args:
         scale: Scale info per sub-region.
         frozen_stages: List of (params_dict, epsilon_list, kappa) tuples for
                        all completed stages (including Stage 0).
                        Stage 0 uses act_s=0 (tanh); higher stages use act_s=2.
-                       epsilon_list[i] is the ε for sub-region i.
-        active_epsilon: List of ε values for the current (active) stage,
-                        one per sub-region.
+                       epsilon_list[i] is either a scalar ε (Stage 0) or a
+                       jnp array of per-variable ε values for sub-region i.
+        active_epsilon: List of per-variable ε arrays for the current stage,
+                        one per sub-region.  Each is a jnp array of shape
+                        (n_uvh + 1,) for floating or (n_uvh + 2,) for grounded,
+                        where the extra entries are eps_mu (and eps_c).
+                        Can also be a scalar 0.0 to skip the active stage.
         active_kappa: κ value for the active stage (used as scl).
         scl: Scale factor for Stage 0 network (default 1).
         basal_mask: List of booleans per sub-region.
@@ -119,6 +127,16 @@ def msnn_solu_create(scale, frozen_stages, active_epsilon, active_kappa,
     if basal_mask is None:
         ng = len(scale)
         basal_mask = [False] * ng
+
+    # Pre-compute per-region skip flags at closure-creation time (Python level).
+    # This avoids traced boolean conversions inside JIT.
+    def _is_zero_eps(eps):
+        if isinstance(eps, (int, float)):
+            return eps == 0
+        # eps is a numpy/jnp array — evaluate to concrete bool NOW, not inside JIT
+        return bool(float(jnp.sum(jnp.abs(jnp.asarray(eps)))) == 0.0)
+
+    _skip_active = [_is_zero_eps(active_epsilon[i]) for i in range(len(active_epsilon))]
 
     def f(params, x, idx):
         """Combined multi-stage forward pass.
@@ -149,38 +167,40 @@ def msnn_solu_create(scale, frozen_stages, active_epsilon, active_kappa,
                     sol = jnp.hstack([uvh])  # Append mu and c at the end
                 else:
                     sol = jnp.hstack([uvh])
-            else:
-                # Higher frozen stages: correction nets (sin-first, act_s=2)
-                uvh_corr = neural_net(stage_params['net_u'][idx], x, kappa, act_s=2)
-                mu_corr = neural_net(stage_params['net_mu'][idx], x, kappa, act_s=2)
+            # else:
+            #     # Higher frozen stages: correction nets (sin-first, act_s=2)
+            #     uvh_corr = neural_net(stage_params['net_u'][idx], x, kappa, act_s=2)
+            #     mu_corr = neural_net(stage_params['net_mu'][idx], x, kappa, act_s=2)
 
-                eps = eps_list[idx]
-                # Add correction to uvh columns
-                n_uvh = 4 if basal_mask[idx] else 3
-                sol = sol.at[:, :n_uvh].add(eps * uvh_corr)
-                # Accumulate mu linearly
-                mu_total = mu_total + eps * mu_corr
+            #     eps = eps_list[idx]
+            #     # Per-variable scaling: eps[:n_uvh] for uvh, eps[n_uvh] for mu
+            #     n_uvh = 4 if basal_mask[idx] else 3
+            #     sol = sol.at[:, :n_uvh].add(eps[:n_uvh] * uvh_corr)
+            #     eps_mu = eps[n_uvh]
+            #     mu_total = mu_total + eps_mu * mu_corr
 
-                if basal_mask[idx] and stage_params['net_c'][idx] is not None:
-                    c_corr = neural_net(stage_params['net_c'][idx], x, kappa, act_s=2)
-                    # Accumulate c linearly
-                    c_total = c_total + eps * c_corr
+            #     if basal_mask[idx] and stage_params['net_c'][idx] is not None:
+            #         c_corr = neural_net(stage_params['net_c'][idx], x, kappa, act_s=2)
+            #         eps_c = eps[n_uvh + 1]
+            #         c_total = c_total + eps_c * c_corr
 
         # --- Active stage (gradients flow through) ---
-        # Skip entirely when epsilon is zero to avoid 0*NaN=NaN with
-        # mismatched params (e.g. during residue-only evaluation)
-        eps_a = active_epsilon[idx]
-        if eps_a != 0:
+        # Skip flag was pre-computed at Python level to avoid traced bool conversion.
+        if not _skip_active[idx]:
             uvh_active = neural_net(params['net_u'][idx], x, active_kappa, act_s=2)
             mu_active = neural_net(params['net_mu'][idx], x, active_kappa, act_s=2)
 
+            eps_a = active_epsilon[idx]
+            # Per-variable scaling: eps_a[:n_uvh] for uvh, eps_a[n_uvh] for mu
             n_uvh = 4 if basal_mask[idx] else 3
-            sol = sol.at[:, :n_uvh].add(eps_a * uvh_active)
-            mu_total = mu_total + eps_a * mu_active
+            sol = sol.at[:, :n_uvh].add(eps_a[:n_uvh] * uvh_active)
+            eps_mu_a = eps_a[n_uvh]
+            mu_total = mu_total + eps_mu_a * mu_active
 
             if basal_mask[idx] and params['net_c'][idx] is not None:
                 c_active = neural_net(params['net_c'][idx], x, active_kappa, act_s=2)
-                c_total = c_total + eps_a * c_active
+                eps_c_a = eps_a[n_uvh + 1]
+                c_total = c_total + eps_c_a * c_active
 
         # Finally, append the exponentiated accumulated variables to the solution
         if basal_mask[idx]:

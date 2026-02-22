@@ -138,7 +138,7 @@ def adam_optimizer(key, lossf, params, dataf, epoch, lr=1e-3, aniso=False, schdu
             llast = loss_info[0][0] if len(loss_info.shape)>1 else loss_info[0]
             loss_all.append(loss_info[0][0:5] if len(loss_info.shape)>1 else loss_info[0:5])
             last_iter += 1
-            print(f'[!] ADAM training completed at minimum loss after burning out for {last_iter} iterations.')
+        print(f'[!] ADAM training completed at minimum loss after burning out for {last_iter} iterations.')
 
 
     if adaptive:
@@ -302,7 +302,8 @@ def msnn_optimizer(key, loss_factory, dataf, scale, gov_eqn, front_eqn,
     from diffice_jax.model.xpinns.initialization import init_nets, init_correction_nets
     from diffice_jax.model.xpinns.networks import solu_create, msnn_solu_create
     from diffice_jax.model.xpinns.residue import (
-        compute_equation_residue, estimate_kappa, estimate_epsilon, estimate_gamma
+        compute_equation_residue, estimate_kappa, estimate_epsilon,
+        estimate_epsilon_per_variable, estimate_gamma
     )
 
     n_sub = len(idxgall)
@@ -402,14 +403,16 @@ def msnn_optimizer(key, loss_factory, dataf, scale, gov_eqn, front_eqn,
                 msnn_config.correction_n_hl, msnn_config.correction_n_unit,
                 kappa_multiplier=msnn_config.kappa_multiplier)
 
-            # --- Step 3: Estimate ε ---
-            epsilon_i = estimate_epsilon(residue_i, fd_i, pde_order=2)
+            # --- Step 3: Estimate per-variable ε from data RMSE ---
+            epsilon_i = estimate_epsilon_per_variable(
+                pred_residue, residue_params, data_residue, scale, i,
+                basal=basal_mask[i])
 
             kappa_per_region.append(kappa_i)
             epsilon_per_region.append(epsilon_i)
             fd_per_region.append(fd_i)
 
-            print(f"  Region {i}: f_d={fd_i:.2f}, κ={kappa_i:.2f}, ε={epsilon_i:.4e}",
+            print(f"  Region {i}: f_d={fd_i:.2f}, κ={kappa_i:.2f}, ε={epsilon_i}",
                   file=sys.stderr)
 
         # Use the max kappa across regions for the correction net scale

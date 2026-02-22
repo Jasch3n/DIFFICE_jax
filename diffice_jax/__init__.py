@@ -29,11 +29,15 @@ from .model.xpinns.prediction import predict as predict_xpinn
 
 from .model.xpinns.initialization import init_correction_nets as init_correction_xpinn
 from .model.xpinns.msnn_config import MSNNConfig
-from .model.xpinns.residue import compute_equation_residue, estimate_kappa, estimate_epsilon, estimate_gamma
+from .model.xpinns.residue import compute_equation_residue, estimate_kappa, estimate_epsilon, estimate_epsilon_per_variable, estimate_gamma
 
 from .optimizer.optimization import adam_optimizer as adam_opt
 from .optimizer.optimization import lbfgs_optimizer as lbfgs_opt
 from .optimizer.optimization import msnn_optimizer as msnn_opt
+
+from .model.xpinns.initialization import init_correction_nets as init_correction_xpinn
+from .model.xpinns.msnn_config import MSNNConfig
+from .model.xpinns.residue import compute_equation_residue, estimate_kappa, estimate_epsilon, estimate_epsilon_per_variable, estimate_gamma
 
 __all__ = ["normdata_pinn", "normdata_xpinn", "dsample_pinn", "dsample_xpinn", 
            "plot_xpinn_data",

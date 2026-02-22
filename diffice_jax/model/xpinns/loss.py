@@ -33,6 +33,8 @@ def sub_scale(scale, basal=False):
     mu0 = rho * g_eff * h0 * (l0m / u0m)
     du0 = u0m / l0m
     dh0 = h0 / l0m
+
+    # [TODO]: Figure out what the right expression for term 0 is 
     term0 = mu0 * g_eff * h0 * u0 / l0m**2
     return u0, v0, h0, mu0, du0, dh0, term0, um/u0, vm/v0
 
@@ -67,7 +69,7 @@ def loss_iso_create(solNN, eqn_all, scale, idxgall, lw, basal_mask=None, gamma_e
     # Pass basal flag per region so grounded regions use rho*g (not rho*gd)
     all_info = jnp.array(tree_map(lambda x: sub_scale(scale[x], basal=basal_mask[x]), idxgall))
     scale_info = all_info[:, 0:7]
-    scale_nm = scale_info / jnp.max(scale_info, axis=0)   # To do: check whether jnp.min or jnp.mean better
+    scale_nm = scale_info / jnp.min(scale_info, axis=0)   # To do: check whether jnp.min or jnp.mean better
     mean_nm = all_info[:, 7:]
     u0, v0, h0, mu0, du0, dh0, term0 = jnp.split(scale_nm, 7, axis=1)
     uvh0 = jnp.hstack([u0, v0, h0])
@@ -218,26 +220,21 @@ def loss_iso_create(solNN, eqn_all, scale, idxgall, lw, basal_mask=None, gamma_e
         """C2 stitching condition at the boundary"""
         # calculate equation residue in sub-region 1 at the interface
         # gov_eqn returns (f_eqn, val_term). we want val_term.
-        term_md1 = fgovterm(x_md[:, 0:2], idx, is_basal_1)[:, 0:-1] * term0[idx]
-        # calculate equation residue in sub-region 2 at the interface
-        term_md2 = fgovterm(x_md[:, 2:4], idx + 1, is_basal_2)[:, 0:-1] * term0[idx + 1]
         # match terms depending on interface type
         if is_basal_1 != is_basal_2:
-            # Grounded-floating interface: match only viscous terms (cols 0,1,3,4)
-            # Skip driving stress terms (col 2: e1term3, col 5: e2term3)
-            # which represent different physics on each side.
-            visc_idx = jnp.array([0, 1, 3, 4])
-            visc_md1 = term_md1[:, visc_idx]
-            visc_md2 = term_md2[:, visc_idx]
-            match_c2_err = ms_error(
-                nthrt(visc_md1, 2) - nthrt(visc_md2, 2)
-            )
-        elif basal_mask is not None:
-            # Same-type interface with basal regions: match first 6 terms
-            match_c2_err = ms_error(nthrt(term_md1[:, 0:6], 2) - nthrt(term_md2[:, 0:6], 2))
-        else:
-            # No basal regions at all: match all terms
-            match_c2_err = ms_error(nthrt(term_md1, 2) - nthrt(term_md2, 2))
+            # C2 continuity is not satisfied at grounding lines
+            match_c2_err = 0.0
+        else: 
+            term_md1 = fgovterm(x_md[:, 0:2], idx, is_basal_1)[:, 0:-1] * term0[idx]
+            term_md2 = fgovterm(x_md[:, 2:4], idx + 1, is_basal_2)[:, 0:-1] * term0[idx + 1]
+            if basal_mask is not None:
+                # calculate equation residue in sub-region 1 at the interface
+                # gov_eqn returns (f_eqn, val_term). we want val_term.
+                # Same-type interface with basal regions: match first 6 terms
+                match_c2_err = ms_error(nthrt(term_md1[:, 0:6], 2) - nthrt(term_md2[:, 0:6], 2))
+            else:
+                # Ice shelf interface: match all terms 
+                match_c2_err = ms_error(nthrt(term_md1, 2) - nthrt(term_md2, 2))
 
         # group all the stitched conditions
         mc0_err = jnp.mean(match_c0_err)

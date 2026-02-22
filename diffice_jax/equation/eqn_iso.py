@@ -127,6 +127,9 @@ def gov_eqn(net, x, scale, basal=False):
     e1term2 = grad_term[:, 5:6] / ry0  # (term12_2, y)
     e2term1 = grad_term[:, 3:4] / ry0  # (term2_1, y)
     e2term2 = grad_term[:, 4:5] / rx0  # (term12_2, x)
+    Rxx     = term[:, 0:1]
+    Ryy     = term[:, 1:2]
+    Rxy     = term[:, 2:3]
     e1term3 = term[:, 3:4]
     e2term3 = term[:, 4:5]
     strate = term[:, 5:6]
@@ -165,10 +168,11 @@ def gov_eqn(net, x, scale, basal=False):
     
     if basal:
         val_term = jnp.hstack([e1term1, e1term2, e1term3, e2term1, e2term2, e2term3, strate, 
-                               e1term4, e2term4, visc_terms_1, grav_basal_terms_1, visc_terms_2, grav_basal_terms_2])
+                               e1term4, e2term4, visc_terms_1, grav_basal_terms_1, visc_terms_2, grav_basal_terms_2,
+                               Rxx, Ryy, Rxy])
         return f_eqn, val_term
     else:
-        val_term = jnp.hstack([e1term1, e1term2, e1term3, e2term1, e2term2, e2term3, strate])
+        val_term = jnp.hstack([e1term1, e1term2, e1term3, e2term1, e2term2, e2term3, strate, Rxx, Ryy, Rxy])
         return f_eqn, val_term
 
 

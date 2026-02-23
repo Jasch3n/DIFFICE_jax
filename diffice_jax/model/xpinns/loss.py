@@ -36,7 +36,7 @@ def sub_scale(scale, basal=False):
 
     # [TODO]: Figure out what the right expression for term 0 is ...
     if basal:
-        term0 = h0**2 / l0m # This captures the physical scaling without the density and gravity (it is therefore O(1))
+        term0 = h0**2 / l0m
     else:
         term0 = h0**2 / l0m
     return u0, v0, h0, mu0, du0, dh0, term0, um/u0, vm/v0
@@ -72,7 +72,7 @@ def loss_iso_create(solNN, eqn_all, scale, idxgall, lw, basal_mask=None, gamma_e
     # Pass basal flag per region so grounded regions use rho*g (not rho*gd)
     all_info = jnp.array(tree_map(lambda x: sub_scale(scale[x], basal=basal_mask[x]), idxgall))
     scale_info = all_info[:, 0:7]
-    scale_nm = scale_info / jnp.min(scale_info, axis=0)   # To do: check whether jnp.min or jnp.mean better
+    scale_nm = scale_info / jnp.mean(scale_info, axis=0)   # To do: check whether jnp.min or jnp.mean better
     mean_nm = all_info[:, 7:]
     u0, v0, h0, mu0, du0, dh0, term0 = jnp.split(scale_nm, 7, axis=1)
     uvh0 = jnp.hstack([u0, v0, h0])
@@ -118,16 +118,25 @@ def loss_iso_create(solNN, eqn_all, scale, idxgall, lw, basal_mask=None, gamma_e
         data_h_err = ms_error(h_pred - h_smp)
 
         if is_basal:
+            #[TODO]: Figure out how to properly scale basal velocity data loss
+            # Reason: Velocity of grounded ice is much smaller 
+            # data_u_err *= 100.0 
+
             data_s_err = ms_error(s_pred - s_smp)
 
             # data_err: [u_err(2), h_err(1)] scaled, plus s_err and log_u_err
-            data_err = jnp.hstack((data_u_err, data_h_err)) * uvh0[idx]
-            s_err_weighted = data_s_err * h0[idx]
+            # data_err = jnp.hstack((data_u_err, data_h_err)) * uvh0[idx]
+            # s_err_weighted = data_s_err * h0[idx]
+            data_err = jnp.hstack((data_u_err, data_h_err))
+            s_err_weighted = data_s_err
             
             data_err_all = jnp.hstack([data_err, s_err_weighted])  # (4,)
 
             # equation error
-            eqn_err = ms_error(f_pred) * term0[idx]  # (2,)
+            # [TODO]: Figure out the right weight balance for equation error 
+            # Reason: term0 is prop to 1/l0m, which is about 1000 larger for a pinning point than for ice shelves
+            # eqn_err = ms_error(f_pred) * term0[idx] / 1e3  # (2,)
+            eqn_err = ms_error(f_pred) # (2,)
 
             # no boundary conditions for grounded regions
             bd_err_vec = jnp.array([0.0, 0.0])  # (2,)
@@ -136,16 +145,19 @@ def loss_iso_create(solNN, eqn_all, scale, idxgall, lw, basal_mask=None, gamma_e
 
         else:
             # floating case
-            data_err = jnp.hstack((data_u_err, data_h_err)) * uvh0[idx]  # (3,)
+            # data_err = jnp.hstack((data_u_err, data_h_err)) * uvh0[idx]  # (3,)
+            data_err = jnp.hstack((data_u_err, data_h_err))  # (3,)
             # pad s_err and log_u_err slots with 0 (not applicable for floating)
             data_err_all = jnp.hstack([data_err, 0.0])  # (4,)
 
             # equation error
-            eqn_err = ms_error(f_pred) * term0[idx]  # (2,)
+            # eqn_err = ms_error(f_pred) * term0[idx]  # (2,)
+            eqn_err = ms_error(f_pred)  # (2,)
 
             # calving front boundary error
             f_bd = front_eqn(net, x_bd, nn_bd, scale[idx])[0]
-            bd_err = ms_error(f_bd) * h0[idx]  # (2,)
+            # bd_err = ms_error(f_bd) * h0[idx]  # (2,)
+            bd_err = ms_error(f_bd)  # (2,)
 
             err_all = jnp.hstack([data_err_all, eqn_err, bd_err])
 
@@ -172,34 +184,41 @@ def loss_iso_create(solNN, eqn_all, scale, idxgall, lw, basal_mask=None, gamma_e
         x_md = data['md'][0][idx]
 
         """C0 stitching condition at the boundary"""
+        u0m = lax.max(u0[idx], u0[idx+1])
+        v0m = lax.max(v0[idx], v0[idx+1])
+        h0m = lax.max(h0[idx], h0[idx+1])
+        mu0m = lax.max(mu0[idx], mu0[idx+1])
+
         # obtain the variable in sub-region 1 at the interface
         U_md1 = net(x_md[:, 0:2], idx)
-        u_md1 = (U_md1[:, 0:1] + um[idx]) * u0[idx]
-        v_md1 = (U_md1[:, 1:2] + vm[idx]) * v0[idx]
-        h_md1 = (U_md1[:, 2:3]) * h0[idx]
+        u_md1 = (U_md1[:, 0:1] + um[idx]) * u0[idx] / u0m
+        v_md1 = (U_md1[:, 1:2] + vm[idx]) * v0[idx] / v0m
+        h_md1 = (U_md1[:, 2:3]) * h0[idx] / h0m
         mu_idx_1 = 4 if basal_mask[idx] else 3
-        mu_md1 = (U_md1[:, mu_idx_1:mu_idx_1+1]) * mu0[idx]
+        mu_md1 = (U_md1[:, mu_idx_1:mu_idx_1+1]) * mu0[idx] / mu0m
         # jdb.print("mean u_md1: {x}", x=jnp.mean(u_md1))
         # jdb.print("mean v_md1: {x}", x=jnp.mean(v_md1))
         # jdb.print("mean h_md1: {x}", x=jnp.mean(h_md1))
         # jdb.print("mu_md1: {x}", x=mu_md1)
         
-        vars_md1 = jnp.hstack([u_md1, v_md1, h_md1, 2 * jnp.log(mu_md1)])
+        # vars_md1 = jnp.hstack([u_md1, v_md1, h_md1, 2 * jnp.log(mu_md1)])
+        vars_md1 = jnp.hstack([u_md1, v_md1, h_md1, mu_md1])
         
         # obtain the variable in sub-region 2 at the interface
         U_md2 = net(x_md[:, 2:4], idx + 1)
-        u_md2 = (U_md2[:, 0:1] + um[idx + 1]) * u0[idx + 1]
-        v_md2 = (U_md2[:, 1:2] + vm[idx + 1]) * v0[idx + 1]
-        h_md2 = (U_md2[:, 2:3]) * h0[idx + 1]
+        u_md2 = (U_md2[:, 0:1] + um[idx + 1]) * u0[idx + 1] / u0m
+        v_md2 = (U_md2[:, 1:2] + vm[idx + 1]) * v0[idx + 1] / v0m
+        h_md2 = (U_md2[:, 2:3]) * h0[idx + 1] / h0m
         mu_idx_2 = 4 if basal_mask[idx+1] else 3
-        mu_md2 = (U_md2[:, mu_idx_2:mu_idx_2+1]) * mu0[idx + 1]
+        mu_md2 = (U_md2[:, mu_idx_2:mu_idx_2+1]) * mu0[idx + 1] / mu0m
         # jdb.print("mean u_md2: {x}", x=jnp.mean(u_md2))
         # jdb.print("mean v_md2: {x}", x=jnp.mean(v_md2))
         # jdb.print("mean h_md2: {x}", x=jnp.mean(h_md2))
         # jdb.print("mu_md2: {x}", x=mu_md2)
         # jdb.print("mean mu_md2: {x}", x=jnp.mean(2 * jnp.log(mu_md2)))
         
-        vars_md2 = jnp.hstack([u_md2, v_md2, h_md2, 2 * jnp.log(mu_md2)])
+        # vars_md2 = jnp.hstack([u_md2, v_md2, h_md2, 2 * jnp.log(mu_md2)])
+        vars_md2 = jnp.hstack([u_md2, v_md2, h_md2, mu_md2])
         
         # group the c0 error
         match_c0_err = ms_error(vars_md1 - vars_md2)
@@ -207,16 +226,26 @@ def loss_iso_create(solNN, eqn_all, scale, idxgall, lw, basal_mask=None, gamma_e
         # jdb.print("mean match_c0_err: {x}", x=jnp.mean(match_c0_err))
 
         """C1 stitching condition at the boundary"""
+        du0m = lax.max(du0[idx], du0[idx+1])
+        dh0m = lax.max(dh0[idx], dh0[idx+1])
+
         # obtain the variable in sub-region 1 at the interface
         dU_md1 = gdnet(x_md[:, 0:2], idx)
-        duv_md1 = dU_md1[:, 0:4] * du0[idx]
-        dh_md1 = dU_md1[:, 4:6] * dh0[idx]
-        dvars_md1 = jnp.hstack([duv_md1, dh_md1])
+        duv_md1 = dU_md1[:, 0:4] * du0[idx] / du0m
+        dh_md1 = dU_md1[:, 4:6] * dh0[idx] / dh0m
+        if is_basal_1 != is_basal_2:
+            dvars_md1 = jnp.hstack([duv_md1])
+        else:
+            dvars_md1 = jnp.hstack([duv_md1, dh_md1])
+
         # obtain the variable in sub-region 2 at the interface
         dU_md2 = gdnet(x_md[:, 2:4], idx + 1)
-        duv_md2 = dU_md2[:, 0:4] * du0[idx + 1]
-        dh_md2 = dU_md2[:, 4:6] * dh0[idx + 1]
-        dvars_md2 = jnp.hstack([duv_md2, dh_md2])
+        duv_md2 = dU_md2[:, 0:4] * du0[idx + 1] / du0m
+        dh_md2 = dU_md2[:, 4:6] * dh0[idx + 1] / dh0m
+        if is_basal_1 != is_basal_2:
+            dvars_md2 = jnp.hstack([duv_md2])
+        else:
+            dvars_md2 = jnp.hstack([duv_md2, dh_md2])
         # group the c1 error
         match_c1_err = ms_error(nthrt(dvars_md1, 2) - nthrt(dvars_md2, 2))
 
@@ -247,17 +276,31 @@ def loss_iso_create(solNN, eqn_all, scale, idxgall, lw, basal_mask=None, gamma_e
         # jdb.print("mc1_err: {x}", x=mc1_err)
         # jdb.print("mc2_err: {x}", x=mc2_err)
         # [NOTE]: Turn on/off the different continuity terms as needed 
-        match_err = jnp.hstack([mc0_err, mc1_err*0.8, mc2_err*0.2])
+        # match_err = jnp.hstack([mc0_err, mc1_err*0.8, mc2_err*0.2])
+        match_err = jnp.hstack([mc0_err, mc1_err*0.7, mc2_err*0.2])
         return match_err
 
     # loss function used for the PINN training
     def loss_fun(params, data):
         # calculate the data_err, eqn_err and bound_err for each sub-regions
-        reg_err_list = tree_map(lambda x: loss_sub(params, data, x), idxgall)
-        reg_err = jnp.mean(jnp.array(reg_err_list), axis=0)
+        reg_err_list = jnp.array(tree_map(lambda x: loss_sub(params, data, x), idxgall))
+
+        reg_err = jnp.mean(reg_err_list, axis=0)
         # calculate the error at the matching boundary
-        match_err_list = tree_map(lambda x: loss_match(params, data, x), idxgall[0:-1])
-        match_err = jnp.mean(jnp.array(match_err_list), axis=0)
+        match_err_list = jnp.array(tree_map(lambda x: loss_match(params, data, x), idxgall[0:-1]))
+        match_err = jnp.mean(match_err_list, axis=0)
+        jdb.print('===============================================================================\n'
+                  '\t\tfloat errs: u={f1:.3e}  | v={f2:.3e}  | h={f3:.3e} | s=N/A\n'
+                  '\t\t            e1={f4:.3e} | e2={f5:.3e} | bd1={bd1:.3e} | bd2={bd2:.3e}\n'
+                  '\t\tgrnd  errs: u={g1:.3e}  | v={g2:.3e}  | h={g3:.3e} | s={g4:.3e}\n'
+                  '\t\t            e1={g5:.3e} | e2={g6:.3e} | bd1={bd3:.3e} | bd2={bd4:.3e}\n'
+                  '\t\tmatch errs: mc0={mc0:.3e} | mc1={mc1:.3e} | mc2={mc2:.3e}',
+                  f1=reg_err_list[0,0], f2=reg_err_list[0,1], f3=reg_err_list[0,2], f4=reg_err_list[0,4], f5=reg_err_list[0,5],
+                  bd1=reg_err_list[0,6], bd2=reg_err_list[0,7],
+                  g1=reg_err_list[1,0], g2=reg_err_list[1,1], g3=reg_err_list[1,2], g4=reg_err_list[1,3], g5=reg_err_list[1,4], g6=reg_err_list[1,5],
+                  bd3=reg_err_list[1,6], bd4=reg_err_list[1,7],
+                  mc0=match_err[0], mc1=match_err[1], mc2=match_err[2])
+
         # group all the error
         err_all = jnp.hstack([reg_err, match_err])
 

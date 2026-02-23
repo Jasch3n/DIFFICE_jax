@@ -214,22 +214,22 @@ def loss_iso_create(solNN, eqn_all, scale, idxgall, lw, basal_mask=None, gamma_e
         # jdb.print("mu_md2: {x}", x=mu_md2)
         # jdb.print("mean mu_md2: {x}", x=jnp.mean(2 * jnp.log(mu_md2)))
         
-        # [NEW]: Apply one-way constraint for mu at the grounding line
-        if is_basal_1 and not is_basal_2:
-            # Region 1 is grounded, Region 2 is floating
-            # We want Region 1's mu to conform to Region 2's mu without altering Region 2
-            mu_md2 = lax.stop_gradient(mu_md2)
-            
-        elif not is_basal_1 and is_basal_2:
-            # Region 1 is floating, Region 2 is grounded
-            # We want Region 2's mu to conform to Region 1's mu without altering Region 1
-            mu_md1 = lax.stop_gradient(mu_md1)
-        
         # vars_md1 = jnp.hstack([u_md1, v_md1, h_md1, 2 * jnp.log(mu_md1)])
         vars_md1 = jnp.hstack([u_md1, v_md1, h_md1, mu_md1])
         
         # vars_md2 = jnp.hstack([u_md2, v_md2, h_md2, 2 * jnp.log(mu_md2)])
         vars_md2 = jnp.hstack([u_md2, v_md2, h_md2, mu_md2])
+        
+        # [NEW]: Apply one-way constraint for all variables at the grounding line
+        if is_basal_1 and not is_basal_2:
+            # Region 1 is grounded, Region 2 is floating
+            # We want Region 1 to conform to Region 2 without altering Region 2
+            vars_md2 = lax.stop_gradient(vars_md2)
+            
+        elif not is_basal_1 and is_basal_2:
+            # Region 1 is floating, Region 2 is grounded
+            # We want Region 2 to conform to Region 1 without altering Region 1
+            vars_md1 = lax.stop_gradient(vars_md1)
         
         # group the c0 error
         match_c0_err = ms_error(vars_md1 - vars_md2)
@@ -257,6 +257,13 @@ def loss_iso_create(solNN, eqn_all, scale, idxgall, lw, basal_mask=None, gamma_e
             dvars_md2 = jnp.hstack([duv_md2])
         else:
             dvars_md2 = jnp.hstack([duv_md2, dh_md2])
+            
+        # [NEW]: Apply one-way constraint for all C1 variables at the grounding line 
+        # if is_basal_1 and not is_basal_2:
+        #     dvars_md2 = lax.stop_gradient(dvars_md2)
+        # elif not is_basal_1 and is_basal_2:
+        #     dvars_md1 = lax.stop_gradient(dvars_md1)
+            
         # group the c1 error
         match_c1_err = ms_error(nthrt(dvars_md1, 2) - nthrt(dvars_md2, 2))
 

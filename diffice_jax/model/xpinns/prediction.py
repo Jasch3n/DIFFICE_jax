@@ -31,6 +31,7 @@ def extract_scale(scale_info, basal=False):
     lxm, lym, um, vm = dmean[0:4]
     h0 = dmean[4]
     # find the maximum velocity and length scale
+    # [TODO]: Figure out whether l0m=lax.min(lx0,ly0) is better
     u0m = lax.max(u0, v0)
     l0m = lax.max(lx0, ly0)
     # calculate the scale of viscosity and strain rate

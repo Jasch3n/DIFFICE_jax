@@ -26,7 +26,7 @@ def sub_scale(scale, basal=False):
     um, vm, h0 = dmean[2:5]
     
     u0m = lax.max(u0, v0)
-    l0m = lax.min(lx0, ly0)
+    l0m = lax.max(lx0, ly0)
     # calculate the scale of viscosity and strain rate
     # Use full gravity for grounded ice (matching PINN behavior)
     g_eff = g if basal else gd
@@ -35,10 +35,7 @@ def sub_scale(scale, basal=False):
     dh0 = h0 / l0m
 
     # [TODO]: Figure out what the right expression for term 0 is ...
-    if basal:
-        term0 = h0**2 / l0m
-    else:
-        term0 = h0**2 / l0m
+    term0 = h0**2 / l0m
     return u0, v0, h0, mu0, du0, dh0, term0, um/u0, vm/v0
 
 
@@ -216,6 +213,20 @@ def loss_iso_create(solNN, eqn_all, scale, idxgall, lw, basal_mask=None, gamma_e
         # jdb.print("mean h_md2: {x}", x=jnp.mean(h_md2))
         # jdb.print("mu_md2: {x}", x=mu_md2)
         # jdb.print("mean mu_md2: {x}", x=jnp.mean(2 * jnp.log(mu_md2)))
+        
+        # [NEW]: Apply one-way constraint for mu at the grounding line
+        if is_basal_1 and not is_basal_2:
+            # Region 1 is grounded, Region 2 is floating
+            # We want Region 1's mu to conform to Region 2's mu without altering Region 2
+            mu_md2 = lax.stop_gradient(mu_md2)
+            
+        elif not is_basal_1 and is_basal_2:
+            # Region 1 is floating, Region 2 is grounded
+            # We want Region 2's mu to conform to Region 1's mu without altering Region 1
+            mu_md1 = lax.stop_gradient(mu_md1)
+        
+        # vars_md1 = jnp.hstack([u_md1, v_md1, h_md1, 2 * jnp.log(mu_md1)])
+        vars_md1 = jnp.hstack([u_md1, v_md1, h_md1, mu_md1])
         
         # vars_md2 = jnp.hstack([u_md2, v_md2, h_md2, 2 * jnp.log(mu_md2)])
         vars_md2 = jnp.hstack([u_md2, v_md2, h_md2, mu_md2])

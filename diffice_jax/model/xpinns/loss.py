@@ -289,17 +289,17 @@ def loss_iso_create(solNN, eqn_all, scale, idxgall, lw, basal_mask=None, gamma_e
         # calculate the error at the matching boundary
         match_err_list = jnp.array(tree_map(lambda x: loss_match(params, data, x), idxgall[0:-1]))
         match_err = jnp.mean(match_err_list, axis=0)
-        jdb.print('===============================================================================\n'
-                  '\t\tfloat errs: u={f1:.3e}  | v={f2:.3e}  | h={f3:.3e} | s=N/A\n'
-                  '\t\t            e1={f4:.3e} | e2={f5:.3e} | bd1={bd1:.3e} | bd2={bd2:.3e}\n'
-                  '\t\tgrnd  errs: u={g1:.3e}  | v={g2:.3e}  | h={g3:.3e} | s={g4:.3e}\n'
-                  '\t\t            e1={g5:.3e} | e2={g6:.3e} | bd1={bd3:.3e} | bd2={bd4:.3e}\n'
-                  '\t\tmatch errs: mc0={mc0:.3e} | mc1={mc1:.3e} | mc2={mc2:.3e}',
-                  f1=reg_err_list[0,0], f2=reg_err_list[0,1], f3=reg_err_list[0,2], f4=reg_err_list[0,4], f5=reg_err_list[0,5],
-                  bd1=reg_err_list[0,6], bd2=reg_err_list[0,7],
-                  g1=reg_err_list[1,0], g2=reg_err_list[1,1], g3=reg_err_list[1,2], g4=reg_err_list[1,3], g5=reg_err_list[1,4], g6=reg_err_list[1,5],
-                  bd3=reg_err_list[1,6], bd4=reg_err_list[1,7],
-                  mc0=match_err[0], mc1=match_err[1], mc2=match_err[2])
+        # jdb.print('===============================================================================\n'
+        #           '\t\tfloat errs: u={f1:.3e}  | v={f2:.3e}  | h={f3:.3e} | s=N/A\n'
+        #           '\t\t            e1={f4:.3e} | e2={f5:.3e} | bd1={bd1:.3e} | bd2={bd2:.3e}\n'
+        #           '\t\tgrnd  errs: u={g1:.3e}  | v={g2:.3e}  | h={g3:.3e} | s={g4:.3e}\n'
+        #           '\t\t            e1={g5:.3e} | e2={g6:.3e} | bd1={bd3:.3e} | bd2={bd4:.3e}\n'
+        #           '\t\tmatch errs: mc0={mc0:.3e} | mc1={mc1:.3e} | mc2={mc2:.3e}',
+        #           f1=reg_err_list[0,0], f2=reg_err_list[0,1], f3=reg_err_list[0,2], f4=reg_err_list[0,4], f5=reg_err_list[0,5],
+        #           bd1=reg_err_list[0,6], bd2=reg_err_list[0,7],
+        #           g1=reg_err_list[1,0], g2=reg_err_list[1,1], g3=reg_err_list[1,2], g4=reg_err_list[1,3], g5=reg_err_list[1,4], g6=reg_err_list[1,5],
+        #           bd3=reg_err_list[1,6], bd4=reg_err_list[1,7],
+        #           mc0=match_err[0], mc1=match_err[1], mc2=match_err[2])
 
         # group all the error
         err_all = jnp.hstack([reg_err, match_err])

@@ -1,5 +1,6 @@
 import jax.numpy as jnp
 import jax
+import jax.debug as jdb
 
 # define the mean squared error
 def ms_error(diff):
@@ -70,8 +71,11 @@ def loss_iso_create(predf, eqn_all, scale, lw, basal=False):
 
             # Calculate boundary mismatch
             u_bd_err = ms_error(u_bd_pred - u_bd)
-            h_bd_err = ms_error(h_bd_pred - h_bd)
-            mu_bd_err = ms_error(jnp.log(mu_bd_pred) - jnp.log(mu_bd))
+            h_bd_err = ms_error(h_bd_pred.flatten() - h_bd.flatten())
+            mu_bd_err = ms_error(jnp.log(mu_bd_pred.flatten()) - jnp.log(mu_bd.flatten()))
+            # jdb.print('u_bd_err shape = {x}', x=u_bd_err.shape)
+            # jdb.print('h_bd_err shape = {x}', x=h_bd_err.shape)
+            # jdb.print('mu_bd_err shape = {x}', x=mu_bd_err.shape)
             bd_err = jnp.hstack((u_bd_err, h_bd_err, mu_bd_err))
         else:
             f_bd, term_bd = front_eqn(net, x_bd, nn_bd, scale)
@@ -140,15 +144,15 @@ def loss_iso_create(predf, eqn_all, scale, lw, basal=False):
         # calculate the total loss
         # # group the loss of all conditions and equations
         # loss = (lw[0]*loss_data + lw[1]*loss_eqn + lw[2]*loss_mag + lw[3]*loss_bd) / loss_ref
-        if basal:
-            loss = (lw[0]*loss_data + lw[1]*loss_eqn + lw[2]*loss_bd) / loss_ref
-            loss_info = [jnp.hstack([jnp.array([loss, loss_data, loss_eqn, loss_bd, data_log_u_err, 0]),
-                                    data_err, eqn_err, bd_err, 0]), f_pred]
-        elif not basal: # assume domain is all floating
-            loss = (lw[0]*loss_data + lw[1]*loss_eqn + lw[2]*loss_bd) / loss_ref
+        # if basal:
+        loss = (lw[0]*loss_data + lw[1]*loss_eqn + lw[2]*loss_bd) / loss_ref
+        #     loss_info = jnp.hstack([jnp.array([loss, loss_data, loss_eqn, loss_bd]),
+        #                             data_err, eqn_err, bd_err])
+        # elif not basal: # assume domain is all floating
+        #     loss = (lw[0]*loss_data + lw[1]*loss_eqn + lw[2]*loss_bd) / loss_ref
             # group the loss of all conditions and equations
-            loss_info = [jnp.hstack([jnp.array([loss, loss_data, loss_eqn, loss_bd]),
-                                    data_err, eqn_err, bd_err]), f_pred]
+        loss_info = jnp.hstack([jnp.array([loss, loss_data, loss_eqn, loss_bd]),
+                                data_err, eqn_err, bd_err])
             
         return loss, loss_info
 

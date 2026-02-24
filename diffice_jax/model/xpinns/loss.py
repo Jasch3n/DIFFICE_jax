@@ -107,6 +107,7 @@ def loss_iso_create(solNN, eqn_all, scale, idxgall, lw, basal_mask=None, gamma_e
         if is_basal:
             s_pred = net(xh_smp)[:, 3:4]
 
+        # ================= CALCULATE LOSSES FOR SUBREGION =================
         # equation residual
         f_pred = gov_eqn(net, x_col, scale[idx], basal=is_basal)[0]
 

@@ -9,6 +9,12 @@ from jax import random, jit, grad, debug, lax, value_and_grad
 from jax.experimental import io_callback
 import jax.flatten_util as flat_utl
 from jax.debug import callback as call
+
+# [FIXME]: There is a version mismatch where jax.interpreters.xla.pytype_aval_mappings has been deprecated. 
+import jax.core
+if not hasattr(jax.interpreters.xla, 'pytype_aval_mappings'):
+    jax.interpreters.xla.pytype_aval_mappings = jax.core.pytype_aval_mappings
+
 from tensorflow_probability.substrates import jax as tfp
 import functools
 
@@ -85,20 +91,18 @@ def adam_optimizer(key, lossf, params, dataf, epoch, lr=1e-3, aniso=False, schdu
         # minimize the loss function using Adam
         params, loss_info, opt_state = adam_minimizer(lossf, params, data, opt_Adam, opt_state)
         # print the loss for every 100 iteration
-        if (step+1) % 1000 == 0:
-            # print the results
-            if len(loss_info.shape)> 1:
-                print(f"ADAM Step:{step+1} | Loss:{loss_info[0][0]:.4e} | d:{loss_info[0][1]:.4e} | eq:{loss_info[0][2]:.4e} | "
-                    f"bd:{loss_info[0][3]:.4e}", file=sys.stderr)
+        if (step+1) % 500 == 0:
+            # [FIXME]: Find a good way to differentiate between PINN and X-PINN training 
+            if len(params) > 1:
+                print(f"ADAM Step:{step+1} | Loss:{loss_info[0]:.4e} | d:{loss_info[1]:.4e} | eq:{loss_info[2]:.4e} | "
+                    f"bd:{loss_info[3]:.4e}", file=sys.stderr)
             else:
                 print(f"ADAM Step:{step+1} | Loss:{loss_info[0]:.4e} | d:{loss_info[1]:.4e} | eq:{loss_info[2]:.4e} | "
                     f"bd:{loss_info[3]:.4e} | m:{loss_info[4]:.4e}", file=sys.stderr)
             if aniso:
                 # modify the wsp value over the iteration
                 lossf.wsp = wsp0 * schdul(step+1)
-
-        
-        # saving the loss
+                
         loss_all.append(loss_info[0:5])
 
     # obtain the total loss in the last iterations
@@ -135,8 +139,8 @@ def adam_optimizer(key, lossf, params, dataf, epoch, lr=1e-3, aniso=False, schdu
             # minimize the loss function using Adam
             params, loss_info, opt_state = adam_minimizer(lossf, params, data, opt_Adam, opt_state)
             # saving the loss
-            llast = loss_info[0][0] if len(loss_info.shape)>1 else loss_info[0]
-            loss_all.append(loss_info[0][0:5] if len(loss_info.shape)>1 else loss_info[0:5])
+            llast = loss_info[0]
+            loss_all.append(loss_info[0:5])
             last_iter += 1
         print(f'[!] ADAM training completed at minimum loss after burning out for {last_iter} iterations.')
 
@@ -208,7 +212,7 @@ def lbfgs_function(lossf, init_params, data, basal=False, print_rate=500):
         io_callback(
             _host_callback,
             (),              # callback returns nothing to device
-            loss_info if len(loss_info.shape)==1 else loss_info[0],    # pass the metrics slice to host
+            loss_info,   # pass the metrics slice to host
             ordered=True     # preserve step ordering across calls
         )
 

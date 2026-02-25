@@ -150,6 +150,9 @@ def gov_eqn(net, x, scale, basal=False):
         # e2_lhs = e2term1 + e2term2 
         # e2_rhs = e2term3 + e2term4 
         visc_terms_1 = e1term1 + e1term2 
+
+        # [NOTE]: When you change the equation scaling here, be sure to also change 
+        #         the viscosity scaling in preprocessing.py accordingly!
         grav_basal_terms_1 = e1term3*5 + e1term4/30 
         visc_terms_2 = e2term1 + e2term2 
         grav_basal_terms_2 = e2term3*5 + e2term4/30 

@@ -159,8 +159,8 @@ def normalize_data(data,basal=False):
         l0m = lax.max(lx0, ly0)
         # calculate the scale of viscosity
         # mu0 = rho * g * h0 * (l0m / u0m) * 100.
-        mu0 = rho * g * h0 * (l0m / u0m) / 5
-        mu_n_bd = bd_mu_raw / mu0
+        mu0 = rho * g * h0 * (l0m / u0m) 
+        mu_n_bd = (bd_mu_raw / mu0) * 50.0
         u_n_bd = (bd_u_raw - u_mean) / u_range 
         v_n_bd = (bd_v_raw - v_mean) / v_range 
         h_n_bd = bd_h_raw / h0

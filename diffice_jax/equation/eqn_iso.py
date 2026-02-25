@@ -150,9 +150,10 @@ def gov_eqn(net, x, scale, basal=False):
         # e2_lhs = e2term1 + e2term2 
         # e2_rhs = e2term3 + e2term4 
         visc_terms_1 = e1term1 + e1term2 
-        grav_basal_terms_1 = e1term3 + e1term4 
+        grav_basal_terms_1 = e1term3*5 + e1term4/30 
         visc_terms_2 = e2term1 + e2term2 
-        grav_basal_terms_2 = e2term3 + e2term4 
+        grav_basal_terms_2 = e2term3*5 + e2term4/30 
+        # [TODO]: Figure out the right scaling for the grav and basal terms !
         e1 = visc_terms_1 - grav_basal_terms_1 
         e2 = visc_terms_2 - grav_basal_terms_2
     else:

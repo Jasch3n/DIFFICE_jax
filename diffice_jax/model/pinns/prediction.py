@@ -23,7 +23,7 @@ def extract_scale(scale_info, basal=False):
     h0 = dmean[4]
     # find the maximum velocity and length scale
     u0m = lax.max(u0, v0)
-    l0m = lax.max(lx0, ly0)
+    l0m = lax.min(lx0, ly0)
 
     # calculate the scale of viscosity
     if basal:

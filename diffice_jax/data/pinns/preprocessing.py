@@ -10,7 +10,7 @@ from jax import lax
 from jax import debug
 
 
-def normalize_data(data,basal=False):
+def normalize_data(data,basal=False, gamma_c=0.9):
     '''
     :param data: original dataset
     :return X_smp, U_smp, X_ct, n_ct, data_info
@@ -156,12 +156,10 @@ def normalize_data(data,basal=False):
         h0 = data_mean[4]
         # find the maximum velocity and length scale
         u0m = lax.max(u0, v0)
-        l0m = lax.max(lx0, ly0)
+        l0m = lax.min(lx0, ly0)
         # calculate the scale of viscosity
-        # mu0 = rho * g * h0 * (l0m / u0m) * 100.
-        mu0 = rho * g * h0 * (l0m / u0m) 
-        # mu_n_bd = (bd_mu_raw / mu0) * 50.0
-        mu_n_bd = (bd_mu_raw / mu0)
+        mu0 = (1-gamma_c) * rho * g * h0 * l0m / u0m
+        mu_n_bd = bd_mu_raw / mu0
         u_n_bd = (bd_u_raw - u_mean) / u_range 
         v_n_bd = (bd_v_raw - v_mean) / v_range 
         h_n_bd = bd_h_raw / h0

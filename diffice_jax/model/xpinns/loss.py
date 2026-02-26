@@ -26,7 +26,7 @@ def sub_scale(scale, basal=False):
     um, vm, h0 = dmean[2:5]
     
     u0m = lax.max(u0, v0)
-    l0m = lax.max(lx0, ly0)
+    l0m = lax.min(lx0, ly0)
     # calculate the scale of viscosity and strain rate
     # Use full gravity for grounded ice (matching PINN behavior)
     g_eff = g if basal else gd

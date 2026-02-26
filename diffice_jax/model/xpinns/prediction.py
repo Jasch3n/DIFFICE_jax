@@ -33,7 +33,7 @@ def extract_scale(scale_info, basal=False):
     # find the maximum velocity and length scale
     # [TODO]: Figure out whether l0m=lax.min(lx0,ly0) is better
     u0m = lax.max(u0, v0)
-    l0m = lax.max(lx0, ly0)
+    l0m = lax.min(lx0, ly0)
     # calculate the scale of viscosity and strain rate
     # Use full gravity for grounded ice, reduced gravity for floating (matching PINN)
     g_eff = g if basal else gd

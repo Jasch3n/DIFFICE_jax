@@ -60,7 +60,7 @@ def gov_eqn(net, x, scale):
     h0 = dmean[4]
 
     u0m = lax.max(u0, v0)
-    l0m = lax.max(lx0, ly0)
+    l0m = lax.min(lx0, ly0)
     ru0 = u0 / u0m
     rv0 = v0 / u0m
     rx0 = lx0 / l0m
@@ -124,7 +124,7 @@ def front_eqn(net, x, nb, scale):
     h0 = dmean[4]
 
     u0m = lax.max(u0, v0)
-    l0m = lax.max(lx0, ly0)
+    l0m = lax.min(lx0, ly0)
     ru0 = u0 / u0m
     rv0 = v0 / u0m
     rx0 = lx0 / l0m

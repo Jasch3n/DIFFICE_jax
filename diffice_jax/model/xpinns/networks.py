@@ -67,7 +67,7 @@ def solu_create(scale, scl=1, act_s=0, basal_mask=None):
         drange = scale[idx][1]
         lx0, ly0, u0, v0 = drange[0:4]
         u0m = lax.max(u0, v0)
-        l0m = lax.max(lx0, ly0)
+        l0m = lax.min(lx0, ly0)
         ru0 = u0 / u0m
         rv0 = v0 / u0m
         rx0 = lx0 / l0m
@@ -214,7 +214,7 @@ def msnn_solu_create(scale, frozen_stages, active_epsilon, active_kappa,
         drange = scale[idx][1]
         lx0, ly0, u0, v0 = drange[0:4]
         u0m = lax.max(u0, v0)
-        l0m = lax.max(lx0, ly0)
+        l0m = lax.min(lx0, ly0)
         ru0 = u0 / u0m
         rv0 = v0 / u0m
         rx0 = lx0 / l0m

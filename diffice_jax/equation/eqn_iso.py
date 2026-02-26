@@ -44,7 +44,7 @@ def vectgrad(func, x):
 
 
 #%% Isotropic shallow-shelf approximation (SSA) equations in the normalized form
-def gov_eqn(net, x, scale, basal=False):
+def gov_eqn(net, x, scale, basal=False, gamma_c=0.9):
     """
     :param net: the neural net instance for calculating the informed part
     """
@@ -63,7 +63,7 @@ def gov_eqn(net, x, scale, basal=False):
     h0 = dmean[4]
 
     u0m = lax.max(u0, v0)
-    l0m = lax.max(lx0, ly0)
+    l0m = lax.min(lx0, ly0)
     ru0 = u0 / u0m
     rv0 = v0 / u0m
     rx0 = lx0 / l0m
@@ -145,20 +145,12 @@ def gov_eqn(net, x, scale, basal=False):
     # print("DEBUG: e1=", e1)
     # print("DEBUG: e2=", e2)
     if basal:
-        # e1_lhs = e1term1 + e1term2 
-        # e1_rhs = e1term3 + e1term4 
-        # e2_lhs = e2term1 + e2term2 
-        # e2_rhs = e2term3 + e2term4 
+        grav_factor  = 1.0     / (1.0 - gamma_c)
+        basal_factor = gamma_c / (1.0 - gamma_c)
         visc_terms_1 = e1term1 + e1term2 
-
-        # [NOTE]: When you change the equation scaling here, be sure to also change 
-        #         the viscosity scaling in preprocessing.py accordingly!
-        # grav_basal_terms_1 = e1term3 + e1term4 / 2.0 
-        # visc_terms_2 = (e2term1 + e2term2) / 50.0
-        # grav_basal_terms_2 = e2term3 + e2term4 / 2.0
-        grav_basal_terms_1 = e1term3 + e1term4 
-        visc_terms_2 = (e2term1 + e2term2) 
-        grav_basal_terms_2 = e2term3 + e2term4 
+        grav_basal_terms_1 = grav_factor * e1term3 + basal_factor * e1term4 
+        visc_terms_2 = e2term1 + e2term2 
+        grav_basal_terms_2 = grav_factor * e2term3 + basal_factor * e2term4 
         e1 = visc_terms_1 - grav_basal_terms_1 
         e2 = visc_terms_2 - grav_basal_terms_2
     else:
@@ -199,7 +191,7 @@ def front_eqn(net, x, nb, scale):
     h0 = dmean[4]
 
     u0m = lax.max(u0, v0)
-    l0m = lax.max(lx0, ly0)
+    l0m = lax.min(lx0, ly0)
     ru0 = u0 / u0m
     rv0 = v0 / u0m
     rx0 = lx0 / l0m

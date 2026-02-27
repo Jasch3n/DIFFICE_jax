@@ -10,7 +10,7 @@ from jax import lax
 from jax import debug
 
 
-def normalize_data(data,basal=False, gamma_c=0.9):
+def normalize_data(data,basal=False, gamma_c=0.33):
     '''
     :param data: original dataset
     :return X_smp, U_smp, X_ct, n_ct, data_info

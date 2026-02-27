@@ -63,7 +63,7 @@ def data_sample_create(data_all, n_pt,basal=False):
         return X_col_lib
     
     M = 6000
-    X_col_lib = expand_col_lib(X_star[0], 80, M=M)
+    X_col_lib = expand_col_lib(X_star[0], 40, M=M)
 
     # define the function that can re-sampling for each calling
     def dataf(key, eval_adaptive=False, adaptive_probs=None, adapt_data=False, mix_adaptive=False, eval_f=None):

@@ -44,7 +44,7 @@ def vectgrad(func, x):
 
 
 #%% Isotropic shallow-shelf approximation (SSA) equations in the normalized form
-def gov_eqn(net, x, scale, basal=False, gamma_c=0.9):
+def gov_eqn(net, x, scale, basal=False, gamma_c=0.33):
     """
     :param net: the neural net instance for calculating the informed part
     """

@@ -1,5 +1,6 @@
 import sys
 import os
+import jax
 import jax.numpy as jnp
 import numpy as np
 from jax import random
@@ -9,7 +10,7 @@ from pathlib import Path
 import pickle
 
 from diffice_jax import normdata_pinn, dsample_pinn
-from diffice_jax import vectgrad, ssa_iso, dbc_iso
+from diffice_jax import ssa_iso, dbc_iso
 from diffice_jax import init_pinn, solu_pinn
 from diffice_jax import loss_iso_pinn
 from diffice_jax import predict_pinn
@@ -131,7 +132,7 @@ with open(FilePath, 'wb') as f:
 #%% prediction
 
 # create the function for trained solution and equation residues
-f_gu = lambda x: vectgrad(f_u, x)[0][:, 0:6]
+f_gu = lambda x: jax.vmap(jax.jacfwd(lambda z: f_u(z[None, :])[0]))(x).reshape(x.shape[0], -1)[:, 0:6]
 # group all the function
 func_all = (f_u, f_gu, gov_eqn)
 # calculate the solution and equation residue at given grids for visualization

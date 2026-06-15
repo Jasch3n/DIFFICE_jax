@@ -2,46 +2,15 @@
 @author: Yongji Wang
 """
 
+import jax
 import jax.numpy as jnp
-from jax import vjp, vmap, lax
+from jax import lax
 
 
-# generate matrix required for vjp for vector gradient
-def vgmat(x, n_out, idx=None):
-    '''
-    :param n_out: number of output variables
-    :param idx: indice (list) of the output variable to take the gradient
-    '''
-    if idx is None:
-        idx = range(n_out)
-    # obtain the number of index
-    n_idx = len(idx)
-    # obtain the number of input points
-    n_pt = x.shape[0]
-    # determine the shape of the gradient matrix
-    mat_shape = [n_idx, n_pt, n_out]
-    # create the zero matrix based on the shape
-    mat = jnp.zeros(mat_shape)
-    # choose the associated element in the matrix to 1
-    for l, ii in zip(range(n_idx), idx):
-        mat = mat.at[l, :, ii].set(1.)
-    return mat
-
-
-# vector gradient of the output with input
-def vectgrad(func, x):
-    # obtain the output and the gradient function
-    sol, vjp_fn = vjp(func, x)
-    # determine the mat grad
-    mat = vgmat(x, sol.shape[1])
-    # calculate the gradient of each output with respect to each input
-    grad0 = vmap(vjp_fn, in_axes=0)(mat)[0]
-    # calculate the total partial derivative of output with input
-    n_pd = x.shape[1] * sol.shape[1]
-    # reshape the derivative of output with input
-    grad = grad0.transpose(1, 0, 2)
-    grad_all = grad.reshape(x.shape[0], n_pd)
-    return grad_all, sol
+def value_and_jacfwd(func, x):
+    sol = func(x)
+    jac = jax.vmap(jax.jacfwd(lambda z: func(z[None, :])[0]))(x)
+    return jac.reshape(x.shape[0], -1), sol
 
 
 #%% Anisotropic shallow-shelf approximation (SSA) equations in the normalized form
@@ -67,7 +36,7 @@ def gov_eqn(net, x, scale):
     ry0 = ly0 / l0m
 
     def grad1stOrder(net, x):
-        grad, sol = vectgrad(net, x)
+        grad, sol = value_and_jacfwd(net, x)
         h = sol[:, 2:3]
         mu = sol[:, 3:4]
         eta = sol[:, 4:5]
@@ -88,7 +57,7 @@ def gov_eqn(net, x, scale):
         return jnp.hstack([term1_1, term2_1, term12_2, term1_3, term2_3, strate])
 
     func_g = lambda x: grad1stOrder(net, x)
-    grad_term, term = vectgrad(func_g, x)
+    grad_term, term = value_and_jacfwd(func_g, x)
 
     e1term1 = grad_term[:, 0:1] / rx0  # (term1_1, x)
     e1term2 = grad_term[:, 5:6] / ry0  # (term12_2, y)
@@ -130,7 +99,7 @@ def front_eqn(net, x, nb, scale):
     rx0 = lx0 / l0m
     ry0 = ly0 / l0m
 
-    grad, sol = vectgrad(net, x)
+    grad, sol = value_and_jacfwd(net, x)
     h = sol[:, 2:3]
     mu = sol[:, 3:4]
     eta = sol[:, 4:5]

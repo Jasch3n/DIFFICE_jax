@@ -1,0 +1,29 @@
+[1] DIFFICE_jax path at /Users/jasperchen/Academics/Software/diffice/DIFFICE_jax/diffice_jax/__init__.py
+[2] Loading and normalizing data from: /Users/jasperchen/Academics/Software/diffice/DIFFICE_jax/tests/test_xpinn_regression/flatbed_data_xpinns_regression_test.mat
+ . . . basal_mask (all regions): [True, False]
+[0, 1]
+None
+[{'net_u': {'depth': 6, 'width': 30}, 'net_mu': {'depth': 6, 'width': 30}, 'net_c0': {'depth': 6, 'width': 30}, 'net_c1': {'depth': 6, 'width': 30}}, {'net_u': {'depth': 6, 'width': 30}, 'net_mu': {'depth': 6, 'width': 30}, 'net_c0': {'depth': 6, 'width': 30}, 'net_c1': {'depth': 6, 'width': 30}}]
+2
+KFAC step 1: objective=3.8275e-01 scalar_loss=9.7832e-01 damping=1.00e+00
+KFAC step 100: objective=4.6287e-02 scalar_loss=4.5504e-02 damping=7.43e-01
+KFAC step 200: objective=3.4280e-02 scalar_loss=3.3623e-02 damping=5.50e-01
+KFAC step 300: objective=2.3383e-02 scalar_loss=2.3012e-02 damping=4.07e-01
+KFAC step 400: objective=1.7703e-02 scalar_loss=1.7346e-02 damping=3.02e-01
+KFAC step 500: objective=1.3976e-02 scalar_loss=1.3727e-02 damping=2.23e-01
+KFAC checkpoint step 500: C_REL_MAE=0.733393 MU_REL_MAE=0.372004 path=/Users/jasperchen/Academics/Software/diffice/DIFFICE_jax/tests/figures/test_xpinn_joint_inversion_flatbed_profile_p2_optimized_nogpinn_r1_checkpoints/KFAC_step_500.pkl
+KFAC_INITIAL_OBJECTIVE=9.98175455e-01
+KFAC_FINAL_OBJECTIVE=1.39430174e-02
+KFAC_START_ITERATION=0
+KFAC_FINAL_ITERATION=500
+KFAC_SECONDS=149.139716
+KFAC_SECONDS_PER_ITER=0.29827943
+KFAC_MU_REL_MAE=0.37200406
+KFAC_C_REL_MAE=0.73339315
+KFAC_CHECKPOINT=/Users/jasperchen/Academics/Software/diffice/DIFFICE_jax/tests/figures/test_xpinn_joint_inversion_flatbed_profile_p2_optimized_nogpinn_r1_checkpoints/KFAC_step_500.pkl
+KFAC_OUTPUT=/Users/jasperchen/Academics/Software/diffice/DIFFICE_jax/tests/figures/test_xpinn_joint_inversion_flatbed_profile_p2_optimized_nogpinn_r1.npz
+KFAC_FIELD_COMPARISON=/Users/jasperchen/Academics/Software/diffice/DIFFICE_jax/tests/figures/test_xpinn_joint_inversion_flatbed_profile_p2_optimized_nogpinn_r1_fields.png
+KFAC_LOSS_CURVE=/Users/jasperchen/Academics/Software/diffice/DIFFICE_jax/tests/figures/test_xpinn_joint_inversion_flatbed_profile_p2_optimized_nogpinn_r1_loss.png
+real 162.35
+user 736.47
+sys 12.88

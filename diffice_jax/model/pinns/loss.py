@@ -12,6 +12,12 @@ def ma_error(diff):
 def u_mag(u):
     return jnp.sqrt(jnp.sum(jnp.square(u), 1)) 
 
+
+def kfac_component_residual(diff, weight):
+    """Scale pointwise residuals so their squared sum equals weighted MSE."""
+
+    return jnp.sqrt(weight / diff.size) * diff.reshape(-1)
+
 #%% loss for inferring isotropic viscosity
 
 def loss_iso_create(predf, eqn_all, scale, lw, basal=False):
@@ -59,8 +65,10 @@ def loss_iso_create(predf, eqn_all, scale, lw, basal=False):
         if basal: 
             s_pred = net(xh_smp)[:, 3:4]
 
-        f_pred, term = gov_eqn(net, x_col, scale, basal=basal)
-        f_pred_bd, _ = gov_eqn(net, x_bd, scale, basal=basal)
+        eqn_fn = lambda x: gov_eqn(net, x, scale, basal=basal)
+        bd_fn = lambda x, nn: front_eqn(net, x, nn, scale)
+        f_pred, term = jax.vmap(eqn_fn, in_axes=(0,))(x_col)
+        f_pred_bd, _ = jax.vmap(bd_fn, in_axes=(0, 0))(x_bd, nn_bd)
         if basal:
             # Get network predictions 
             gl_pred = net(x_bd)
@@ -78,7 +86,7 @@ def loss_iso_create(predf, eqn_all, scale, lw, basal=False):
             # jdb.print('mu_bd_err shape = {x}', x=mu_bd_err.shape)
             bd_err = jnp.hstack((u_bd_err, h_bd_err, mu_bd_err))
         else:
-            f_bd, term_bd = front_eqn(net, x_bd, nn_bd, scale)
+            f_bd = f_pred_bd
 
 
         # calculate the mean squared root error of normalization cond.
@@ -156,7 +164,81 @@ def loss_iso_create(predf, eqn_all, scale, lw, basal=False):
             
         return loss, loss_info
 
+    def kfac_residual_terms(params, data):
+        """Return KFAC residual groups for data, equation, and calving-front terms."""
+
+        net = lambda z: predf(params, z)
+        x_smp = data['smp'][0]
+        u_smp = data['smp'][1]
+        xh_smp = data['smp'][2]
+        h_smp = data['smp'][3]
+        x_col = data['col'][0]
+        x_bd = data['bd'][0]
+
+        u_pred = net(x_smp)[:, 0:2]
+        h_pred = net(xh_smp)[:, 2:3]
+        data_weight = jnp.array([1., 1., 0.6])
+        eqn_weight = jnp.array([1., 1.])
+
+        data_residuals = [
+            kfac_component_residual(u_pred[:, 0:1] - u_smp[:, 0:1], lw[0] * data_weight[0]),
+            kfac_component_residual(u_pred[:, 1:2] - u_smp[:, 1:2], lw[0] * data_weight[1]),
+            kfac_component_residual(h_pred - h_smp, lw[0] * data_weight[2]),
+        ]
+
+        eqn_fn = lambda x: gov_eqn(net, x, scale, basal=basal)[0]
+        f_pred = jax.vmap(eqn_fn, in_axes=(0,))(x_col)
+        eqn_residuals = [
+            kfac_component_residual(f_pred[:, 0:1], lw[1] * eqn_weight[0]),
+            kfac_component_residual(f_pred[:, 1:2], lw[1] * eqn_weight[1]),
+        ]
+
+        if basal:
+            u_bd = data['bd'][1]
+            h_bd = data['bd'][2]
+            mu_bd = data['bd'][3]
+            gl_pred = net(x_bd)
+            bd_weight = jnp.array([0.3, 0.3, 0.3, 1.0])
+            bd_residuals = [
+                kfac_component_residual(gl_pred[:, 0:1] - u_bd[:, 0:1], lw[2] * bd_weight[0]),
+                kfac_component_residual(gl_pred[:, 1:2] - u_bd[:, 1:2], lw[2] * bd_weight[1]),
+                kfac_component_residual(gl_pred[:, 2:3] - h_bd.reshape(-1, 1), lw[2] * bd_weight[2]),
+                kfac_component_residual(jnp.log(gl_pred[:, 4:5]) - jnp.log(mu_bd.reshape(-1, 1)), lw[2] * bd_weight[3]),
+            ]
+        else:
+            nn_bd = data['bd'][1]
+            bd_fn = lambda x, nn: front_eqn(net, x, nn, scale)[0]
+            f_bd = jax.vmap(bd_fn, in_axes=(0, 0))(x_bd, nn_bd)
+            bd_weight = jnp.array([1., 1.])
+            bd_residuals = [
+                kfac_component_residual(f_bd[:, 0:1], lw[2] * bd_weight[0]),
+                kfac_component_residual(f_bd[:, 1:2], lw[2] * bd_weight[1]),
+            ]
+
+        return {
+            "data": jnp.concatenate(data_residuals).reshape(-1, 1),
+            "eqn": jnp.concatenate(eqn_residuals).reshape(-1, 1),
+            "ct": jnp.concatenate(bd_residuals).reshape(-1, 1),
+        }
+
+    def kfac_residuals(params, data, terms=None):
+        """Weighted residual vector matching ``loss_fun`` term composition."""
+
+        residual_terms = kfac_residual_terms(params, data)
+        active_terms = ("data", "eqn", "ct") if terms is None else terms
+        residuals = [residual_terms[name] for name in active_terms]
+        return jnp.concatenate(residuals).reshape(-1, 1)
+
+    def kfac_objective(params, data, terms=None):
+        """Squared residual objective used by KFAC."""
+
+        residuals = kfac_residuals(params, data, terms=terms)
+        return jnp.sum(jnp.square(residuals)) / loss_fun.lref
+
     loss_fun.lref = 1.0
+    loss_fun.kfac_residual_terms = kfac_residual_terms
+    loss_fun.kfac_residuals = kfac_residuals
+    loss_fun.kfac_objective = kfac_objective
     return loss_fun
 
 

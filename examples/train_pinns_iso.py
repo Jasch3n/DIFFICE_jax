@@ -1,5 +1,6 @@
 import sys
 import os
+import jax
 import jax.numpy as jnp
 import numpy as np
 from jax import random
@@ -9,7 +10,7 @@ from pathlib import Path
 import pickle
 
 from diffice_jax import normdata_pinn, dsample_pinn
-from diffice_jax import vectgrad, ssa_iso, dbc_iso
+from diffice_jax import ssa_iso, dbc_iso
 from diffice_jax import init_pinn, solu_pinn
 from diffice_jax import loss_iso_pinn
 from diffice_jax import predict_pinn
@@ -115,6 +116,65 @@ data_l = dataf_l(key_lbfgs)
 """training with L-BFGS"""
 trained_params, loss2 = lbfgs_opt(NN_loss, trained_params, data_l, epoch2)
 
+
+
+kfac_config = dict(
+    # When learning_rate, momentum, and damping are each set to None
+    # this enables the respective adaptive methods for them.
+    # 1e-4, 0.9, and 1e-4 are sensible values, but the adaptive
+    # methods tend to gives better results. Only the damping
+    # adaptation method benefits from tuning
+    learning_rate=None,
+    momentum=None,
+    damping=jnp.nan,
+    norm_constraint=1e-8,  # ignored when LR or momentum adaptation is used
+    initial_damping=1e-0,  # used by the adaptive damping method
+    min_damping=1e-14,  # used by the adaptive damping method
+    curvature_block_type="naive_full",  # "naive_full" (very important setting)
+    damping_adaptation_decay=0.998,
+    curvature_ema=0.998,
+    inverse_update_period=1,
+    num_burnin_steps=0,  # TODO(jamesmartens): experiment with this
+    always_use_exact_qmodel_for_damping_adjustment=True,
+    include_norms_in_stats=True
+    )
+
+
+def kfac_optimizer(rng, lossf, config, params, dataf, epoch):
+    optim = KfacOptimizer(
+        loss_fn=lossf, **config).get_optimizer()
+
+    rng, key = jax.random.split(rng)
+    data = dataf(key)
+    opt_state = optim.init(params, key, data)
+    loss_all = []
+    losse_all = []
+    damping = config['initial_damping']
+    damping_decay = config['damping_adaptation_decay']
+    damping_min = config['min_damping']
+
+    # start the training iteration
+    for step in range(epoch):
+        rng, *keys = jax.random.split(rng, 3)
+        params, opt_state, stats = optim.step(
+            params, opt_state, keys[0], batch=data, damping=damping, global_step_int=step)
+
+        loss_info = stats['aux']
+        loss_all.append(loss_info)
+        losse_all.append(loss_info[2])
+
+        if (step+1) % 50 == 0:
+            dmp = stats['damping']
+            print(f"Step: {step+1} | Loss: {loss_info[0]:.4e} | Loss_d: {loss_info[1]:.4e} | "
+                  f"Loss_e: {loss_info[2]:.4e} | Dp: {dmp:.4e}", file=sys.stderr)
+
+
+        if damping > damping_min:
+            damping *= damping_decay
+
+    return params, loss_all
+
+
 # compute the total time of training
 elapsed = time.time() - start_time
 print('Training time: %.4f' % elapsed, file=sys.stderr)
@@ -135,7 +195,7 @@ with open(FilePath, 'wb') as f:
 
 # create the function for trained solution and equation residues
 f_u = lambda x: pred_u(trained_params, x)
-f_gu = lambda x: vectgrad(f_u, x)[0][:, 0:6]
+f_gu = lambda x: jax.vmap(jax.jacfwd(lambda z: f_u(z[None, :])[0]))(x).reshape(x.shape[0], -1)[:, 0:6]
 # group all the function
 func_all = (f_u, f_gu, gov_eqn)
 # calculate the solution and equation residue at given grids for visualization

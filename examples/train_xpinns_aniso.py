@@ -10,7 +10,7 @@ from pathlib import Path
 import pickle
 
 from diffice_jax import normdata_xpinn, dsample_xpinn
-from diffice_jax import vectgrad, ssa_aniso, dbc_aniso
+from diffice_jax import ssa_aniso, dbc_aniso
 from diffice_jax import init_xpinn, solu_xpinn
 from diffice_jax import loss_aniso_xpinn
 from diffice_jax import predict_xpinn
@@ -76,7 +76,10 @@ scale = tree_map(lambda x: data_all[x][4][0:2], idxgall)
 #%% initialization
 
 # initialize the weights and biases of the network
-trained_params = init_xpinn(keys[0], n_hl, n_unit, n_sub=len(idxgall), aniso=True)
+embedding_config = [dict(embedding=False, embed_n=16, embed_std=2.0) for _ in idxgall]
+# Example mixed setup:
+# embedding_config[0] = dict(embedding=True, embed_n=32, embed_std=8.0)
+trained_params = init_xpinn(keys[0], n_hl, n_unit, n_sub=len(idxgall), aniso=True, embedding_config=embedding_config)
 
 # create the solution function [tuple(callable, callable)]
 solNN = solu_xpinn(scale)

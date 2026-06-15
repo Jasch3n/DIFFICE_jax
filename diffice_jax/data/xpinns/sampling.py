@@ -7,31 +7,111 @@ from jax import random
 from jax.tree_util import tree_map
 import jax.lax as lax
 import jax.debug as jdb
+from typing import NamedTuple, Tuple
+from jax.typing import ArrayLike
 
-def eval_RAD_probs(X_col_all, eval_f):
-    f_pred_1 = eval_f(X_col_all[0], 0, False)[1]
-    f_pred_2 = eval_f(X_col_all[1], 1, True)[1]
-    eqn_err = [f_pred_1, f_pred_2]
+N_INTERFACE_LIBRARY = 1500
+N_INTERFACE_COLLOCATION = 600
 
+class DataSample(NamedTuple):
+    X_smp: ArrayLike 
+    U_smp: ArrayLike
+    Xh_smp: ArrayLike 
+    H_smp: ArrayLike
+    S_smp: ArrayLike 
+    Mu_smp: ArrayLike 
+    C_smp: ArrayLike
+    
+def eval_RAD_probs(X_col_all, idxgall, basal_mask, eval_f):
     # RAD pdf with k=2 and c=1 (see Wu et al. 2023)
     def compute_pdf(err_item):
-        err_sq = jnp.sum(jnp.square(err_item[:, 0:6]), axis=1)
-        p = err_sq / jnp.mean(err_sq) + 1
-        p /= jnp.sum(p)
-        return p
+        err_sq = jnp.sum(jnp.square(err_item), axis=1)
+        err_sq = jnp.where(jnp.isfinite(err_sq), err_sq, 0.0)
+        err_mean = jnp.mean(err_sq)
+        p = jnp.where(err_mean > 0.0, err_sq / err_mean + 1.0, jnp.ones_like(err_sq))
+        p = jnp.where(jnp.isfinite(p), p, 1.0)
+        p_sum = jnp.sum(p)
+        return jnp.where(p_sum > 0.0, p / p_sum, jnp.ones_like(p) / p.shape[0])
 
-    probs = tree_map(lambda x: compute_pdf(eqn_err[x]), [0, 1])
+    def normalized_eqn_err(x_col, idx, basal):
+        eqn_out = eval_f(x_col, idx, basal)
+        err = eqn_out[0]
+        if len(eqn_out) < 2:
+            return err
+        if basal:
+            x_term_ref = jnp.hstack((eqn_out[1][:, 0:3], eqn_out[1][:, 7:8]))
+            y_term_ref = jnp.hstack((eqn_out[1][:, 3:6], eqn_out[1][:, 8:9]))
+        else:
+            x_term_ref = eqn_out[1][:, 0:3]
+            y_term_ref = eqn_out[1][:, 3:6]
+        x_term_scale = jnp.max(jnp.abs(x_term_ref), axis=1, keepdims=True)
+        y_term_scale = jnp.max(jnp.abs(y_term_ref), axis=1, keepdims=True)
+        x_term_scale = jnp.where(jnp.isfinite(x_term_scale) & (x_term_scale > 0.0), x_term_scale, 1.0)
+        y_term_scale = jnp.where(jnp.isfinite(y_term_scale) & (y_term_scale > 0.0), y_term_scale, 1.0)
+        return err / jnp.hstack((x_term_scale, y_term_scale))
+
+    eqn_err = [
+        normalized_eqn_err(X_col_all[pos], idx, basal_mask[pos])
+        for pos, idx in enumerate(idxgall)
+    ]
+    probs = [compute_pdf(err_item) for err_item in eqn_err]
     return probs
 
-def data_sample_create(data_all, idxgall, n_pt):
+def nearest_interface_collocation_library(X_col, X_if):
+    n_take = min(N_INTERFACE_LIBRARY, X_col.shape[0])
+    if n_take == 0 or X_if.shape[0] == 0:
+        return jnp.zeros((0, X_col.shape[1]), dtype=X_col.dtype)
+    dist_sq = jnp.min(jnp.sum(jnp.square(X_col[:, None, :] - X_if[None, :, :]), axis=2), axis=1)
+    idx = jnp.argsort(dist_sq)[:n_take]
+    return X_col[idx]
 
-    def sample_s(x, idx):
-            if len(U_star[x]) > 2:
-                return U_star[x][2][idx]
-            return None
-    
+def interface_collocation_libraries(X_col_all, X_md, basal_mask):
+    X_interface_lib = [
+        jnp.zeros((0, X_col_all[pos].shape[1]), dtype=X_col_all[pos].dtype)
+        for pos in range(len(X_col_all))
+    ]
+    for pos in range(len(X_md)):
+        if basal_mask[pos] == basal_mask[pos + 1]:
+            continue
+        X_interface_lib[pos] = jnp.vstack([
+            X_interface_lib[pos],
+            nearest_interface_collocation_library(X_col_all[pos], X_md[pos][:, 0:2]),
+        ])
+        X_interface_lib[pos + 1] = jnp.vstack([
+            X_interface_lib[pos + 1],
+            nearest_interface_collocation_library(X_col_all[pos + 1], X_md[pos][:, 2:4]),
+        ])
+    return X_interface_lib
+
+def append_interface_collocation(X_col, X_interface):
+    return [
+        jnp.vstack([X_col[pos], X_interface[pos]])
+        if X_interface[pos].shape[0] > 0 else X_col[pos]
+        for pos in range(len(X_col))
+    ]
+
+def sample_interface_collocation(keys, X_interface_lib):
+    X_interface = []
+    for pos, X_lib in enumerate(X_interface_lib):
+        if X_lib.shape[0] == 0:
+            X_interface.append(X_lib)
+            continue
+        idx = random.choice(
+            keys[pos],
+            jnp.arange(X_lib.shape[0]),
+            [N_INTERFACE_COLLOCATION],
+            replace=X_lib.shape[0] < N_INTERFACE_COLLOCATION,
+        )
+        X_interface.append(X_lib[idx])
+    return X_interface
+
+def data_sample_create(data_all, idxgall:ArrayLike, n_pt: ArrayLike, basal_mask=None, use_regression=False):
     # obtain the number of sub-group
     ng = len(idxgall)
+    if basal_mask is None:
+        basal_mask = [False] * ng
+    elif len(basal_mask) != ng:
+        raise ValueError('[xpinn :: sampling] basal_mask must match the number of sub-regions')
     # load the data within each sub-region
     X_star = tree_map(lambda x: data_all[x][0], idxgall)
     U_star = tree_map(lambda x: data_all[x][1], idxgall)
@@ -43,16 +123,9 @@ def data_sample_create(data_all, idxgall, n_pt):
     n_md = [jnp.array(1.)] * (ng-1)
 
     # For adaptive sampling later
-    X_col_all = tree_map(lambda x: X_star[x][0], idxgall)
+    X_col_all = tree_map(lambda x: X_star[x][2], idxgall)
     
-    # Normalize n_pt to be list of lists (or arrays) matching subregions
-    # n_pt structure: [vel, thick, col, boundary, interface, (adapt)]
-    # Ensure each is a list of length ng (or ng-1 for interface)
     n_pt_norm = []
-    # indices 0 (vel), 1 (thick), 2 (col), 3 (bd), 4 (interface), 5 (adapt)
-    # mapping to expected lengths: 
-    # 0,1,2,3,5 -> ng
-    # 4 -> ng-1 (if ng > 1)
     
     expected_lens = [ng, ng, ng, ng, max(ng-1, 1), ng] 
     # n_pt input might be array or list.
@@ -103,13 +176,17 @@ def data_sample_create(data_all, idxgall, n_pt):
         X_md2 = Xraw_md[l + 1][0:n_md1, :]
         # pair the boundary in both sub-regions
         X_mdp = jnp.hstack([X_md1, X_md2])
+            
         n_md[l] = n_md1
         X_md[l] = X_mdp
+    X_interface_lib = interface_collocation_libraries(X_col_all, X_md, basal_mask)
 
     # create the index of velocity data points within all sub-regions
     idx_data = tree_map(lambda x: jnp.arange(X_star[x][0].shape[0]), idxgall)
     # create the index of thickness data points within all sub-regions
     idxh_data = tree_map(lambda x: jnp.arange(X_star[x][1].shape[0]), idxgall)
+    # create the index of collocation points within all sub-regions
+    idx_col_data = tree_map(lambda x: jnp.arange(X_star[x][2].shape[0]), idxgall)
     # create the index of data points for all sub-regions at the calving front
     # For grounded regions with no calving front, X_ct has shape (0, 2), yielding an empty index
     idx_bd = tree_map(lambda x: jnp.arange(max(X_ct[x].shape[0], 1)), idxgall)
@@ -119,7 +196,7 @@ def data_sample_create(data_all, idxgall, n_pt):
     # define the function that can re-sampling for each calling
     def dataf(key, eval_adaptive=None, eval_f=None):
         # generate the new random key
-        _, *keys = random.split(key, 4*ng)
+        _, *keys = random.split(key, 5*ng + 1)
 
         # sampling the velocity data point based on the index
         idx_smp = tree_map(lambda x, y, n: random.choice(x, y, [n], replace=False), keys[0:ng], idx_data, n_pt[0])
@@ -133,39 +210,30 @@ def data_sample_create(data_all, idxgall, n_pt):
 
         # sampling the surface elevation data for basal regions (same indices as thickness)
         # U_star[x] has 3 elements [uv, h, s] for basal, 2 [uv, h] for floating
-        S_smp = tree_map(lambda x, y: sample_s(x, y), idxgall, idxh_smp)
-
-        # generate a random sample of collocation point within the domain
-        # Check if eval_adaptive is enabled (globally or per subregion)
-        # If eval_adaptive=True (global), we return full grids for all regions (for RAD eval).
-        # If eval_adaptive is a list/dict, check per region.
+        S_smp = tree_map(lambda x, y: U_star[x][2][y], idxgall, idxh_smp)
         
-        # Helper to decide sampling strategy for a region
-        probs = None
-        if eval_adaptive: 
-            probs = eval_RAD_probs(X_col_all, eval_f)
-            
-        def sample_col(key, region_idx, region_indices, n_c, n_a):        
-            if (not probs is None):
-                return random.choice(key, region_indices, [n_c], p=probs[region_idx], replace=True)
-            else:
-                # Uniform sampling
-                return random.choice(key, region_indices, [n_c], replace=False)
+        if use_regression:
+            Mu_smp = tree_map(lambda x, y: U_star[x][3][y], idxgall, idx_smp)
+            C_smp  = tree_map(lambda x, y: U_star[x][4][y], idxgall, idx_smp)
 
-        # Apply sampling per region
-        # Pass n_pt[2] (collocation counts) and n_pt[5] (adapt counts if exists)
-        n_a_list = n_pt[5] if len(n_pt) > 5 else [0]*ng
-        idx_col = tree_map(lambda k, i, indices, n_c, n_a: sample_col(k, i, indices, n_c, n_a), 
-                           keys[ng:(2*ng)], 
-                           idxgall, 
-                           idx_data,
-                           n_pt[2],
-                           n_a_list)
-        X_col = tree_map(lambda x, y: X_star[x][0][y], idxgall, idx_col)
+        # Sample collocation points, potentially based on equation residuals
+        probs = eval_RAD_probs(X_col_all, idxgall, basal_mask, eval_f) if eval_adaptive else None
+        idx_col = [
+            random.choice(
+                keys[ng + pos],
+                idx_col_data[pos],
+                [n_pt[2][pos]],
+                p=None if probs is None else probs[pos],
+                replace=True
+            )
+            for pos in range(ng)
+        ]
+        X_col = tree_map(lambda x, y: X_star[x][2][y], idxgall, idx_col)
+        X_interface_col = sample_interface_collocation(keys[(4*ng):(5*ng)], X_interface_lib)
+        X_col = append_interface_collocation(X_col, X_interface_col)
 
         # Generate a random index of the data at ice front
-        # [NOTE]: Use replace=True to handle grounded regions with fewer boundary points than requested
-        idx_cbd = tree_map(lambda x, y, n: random.choice(x, y, [n], replace=True), keys[(2*ng):(3*ng)], idx_bd, n_pt[3])
+        idx_cbd = tree_map(lambda x, y, n: random.choice(x, y, [n]), keys[(2*ng):(3*ng)], idx_bd, n_pt[3])
         # For regions with empty boundary data (grounded), create zero-filled placeholders
         def safe_bd_sample(xct, idx, n):
             if xct.shape[0] == 0:
@@ -185,8 +253,111 @@ def data_sample_create(data_all, idxgall, n_pt):
         X_mbd = tree_map(lambda x, y: X_md[x][y], idxgall[0:-1], idx_mbd)
 
         # group all the data and collocation points
-        data = dict(smp=[X_smp, U_smp, Xh_smp, H_smp, S_smp], col=[X_col],  bd=[X_bd, nn_bd], md=[X_mbd])
+        if use_regression:
+            sample = DataSample(X_smp, U_smp, Xh_smp, H_smp, S_smp, Mu_smp, C_smp)
+        else:
+            sample = DataSample(X_smp, U_smp, Xh_smp, H_smp, S_smp, [], [])
+            
+        data = dict(smp=sample, col=[X_col],  bd=[X_bd, nn_bd], md=[X_mbd])
+        
         return data
+    
     return dataf
 
 
+def data_regression_sample_create(data_all, idxgall:ArrayLike, n_pt: ArrayLike, basal_mask=None,
+                                  grounded_only_interface_mu_ct:bool=False):
+    # obtain the number of sub-group
+    ng = len(idxgall)
+    if basal_mask is None:
+        basal_mask = [False] * ng
+    elif len(basal_mask) != ng:
+        raise ValueError('[xpinn :: regression sampling] basal_mask must match the number of sub-regions')
+    # load the data within each sub-region
+    X_star = tree_map(lambda x: data_all[x][0], idxgall)
+    U_star = tree_map(lambda x: data_all[x][1], idxgall)
+    Xraw_md = tree_map(lambda x: data_all[x][5], idxgall)
+    X_md = Xraw_md[0:-1]
+    n_md = [jnp.array(1.)] * (ng-1)
+    X_ct_star = tree_map(lambda x: data_all[x][2], idxgall)
+    nnct_star = tree_map(lambda x: data_all[x][3], idxgall)
+    bd_star = tree_map(lambda x: data_all[x][6] if len(data_all[x]) > 6 else None, idxgall)
+    X_col_all = tree_map(lambda x: X_star[x][2], idxgall)
+
+    for l in range(ng - 1):
+        if l == 0:
+            X_md1 = Xraw_md[l]
+        else:
+            n_md0 = n_md[l - 1]
+            X_md1 = Xraw_md[l][n_md0:]
+        n_md1 = X_md1.shape[0]
+        X_md2 = Xraw_md[l + 1][0:n_md1, :]
+        X_md[l] = jnp.hstack([X_md1, X_md2])
+        n_md[l] = n_md1
+    X_interface_lib = interface_collocation_libraries(X_col_all, X_md, basal_mask)
+
+    # create the index of velocity data points within all sub-regions
+    idx_data = tree_map(lambda x: jnp.arange(X_star[x][0].shape[0]), idxgall)
+    idxh_data = tree_map(lambda x: jnp.arange(X_star[x][1].shape[0]), idxgall)
+    idx_col_data = tree_map(lambda x: jnp.arange(X_star[x][2].shape[0]), idxgall)
+    n_col = n_pt[2] if len(n_pt) > 2 else n_pt[0]
+
+    # define the function that can re-sampling for each calling
+    def dataf(key, eval_adaptive=None, eval_f=None):
+        # generate the new random key
+        _, *keys = random.split(key, 5*ng + 1)
+
+        # sampling the velocity data point based on the index
+        idx_smp = tree_map(lambda x, y, n: random.choice(x, y, [n], replace=False), keys[0:ng], idx_data, n_pt[0])
+        X_smp = tree_map(lambda x, y: X_star[x][0][y], idxgall, idx_smp)
+        U_smp = tree_map(lambda x, y: U_star[x][0][y], idxgall, idx_smp)
+
+        # sampling the thickness data point based on the index
+        idxh_smp = tree_map(lambda x, y, n: random.choice(x, y, [n], replace=False), keys[0:ng], idxh_data, n_pt[1])
+        Xh_smp = tree_map(lambda x, y: X_star[x][1][y], idxgall, idxh_smp)
+        H_smp = tree_map(lambda x, y: U_star[x][1][y], idxgall, idxh_smp)
+
+        # sampling the surface elevation data for basal regions (same indices as thickness)
+        # U_star[x] has 3 elements [uv, h, s] for basal, 2 [uv, h] for floating
+        S_smp = tree_map(lambda x, y: U_star[x][2][y], idxgall, idxh_smp)
+        
+        Mu_smp = tree_map(lambda x, y: U_star[x][3][y], idxgall, idx_smp)
+        C_smp  = tree_map(lambda x, y: U_star[x][4][y], idxgall, idx_smp)
+        # jdb.print('[DEBUG]: Region 0 Avg C_smp = {s}', s=jnp.mean(C_smp[0]))
+        # jdb.print('[DEBUG]: Region 1 Avg C_smp = {s}', s=jnp.mean(C_smp[1]))
+        # jdb.print('[DEBUG]: Region 2 Avg C_smp = {s}', s=jnp.mean(C_smp[2]))
+        
+        sample = DataSample(X_smp, U_smp, Xh_smp, H_smp, S_smp, Mu_smp, C_smp)
+        
+        probs = eval_RAD_probs(X_col_all, idxgall, basal_mask, eval_f) if eval_adaptive else None
+        idx_col = [
+            random.choice(
+                keys[ng + pos],
+                idx_col_data[pos],
+                [n_col[pos]],
+                p=None if probs is None else probs[pos],
+                replace=True
+            )
+            for pos in range(ng)
+        ]
+        X_col_smp = tree_map(lambda x, y: X_star[x][2][y], idxgall, idx_col)
+        X_interface_col = sample_interface_collocation(keys[(4*ng):(5*ng)], X_interface_lib)
+        X_col_smp = append_interface_collocation(X_col_smp, X_interface_col)
+
+        X_ct = tree_map(lambda x: X_ct_star[x], idxgall)
+        if grounded_only_interface_mu_ct:
+            nnct = tree_map(
+                lambda x: jnp.zeros((X_ct_star[x].shape[0], 1))
+                if bd_star[x] is None else bd_star[x][0],
+                idxgall)
+        else:
+            nnct = tree_map(lambda x: nnct_star[x], idxgall)
+        X_md_smp = tree_map(lambda x: X_md[x], idxgall[:-1])
+        # jdb.print('X_md len = {s}', s=len(X_md_smp))
+        # jdb.print('X_md shape = {s}', s=X_md_smp[0].shape)
+            
+        data = dict(smp=sample, ct=[X_ct, nnct], col=[X_col_smp], md=[X_md_smp])
+        
+        return data
+    
+    return dataf

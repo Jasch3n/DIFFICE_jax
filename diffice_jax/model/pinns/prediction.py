@@ -81,7 +81,7 @@ def predict(func_all, data_all, aniso=False, basal=False):
         s2 = f_u(xh_pred)[:,3:4]
 
     # set the partition number
-    nsp = 4
+    nsp = 32
     # separate input into different partition to avoid GPU memory limit
     x_psp = jnp.array_split(x_pred, nsp)
     idxsp = jnp.arange(nsp).tolist()

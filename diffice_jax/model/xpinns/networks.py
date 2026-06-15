@@ -1,4 +1,5 @@
 import sys
+import jax
 import jax.numpy as jnp
 from jax import lax
 from pathlib import Path
@@ -7,13 +8,46 @@ import jax.debug as jdb
 project_root = Path(__file__).parent.parent.parent
 sys.path.append(str(project_root))
 
-from equation.eqn_iso import vectgrad
+def floating_surface(uvhs, scale):
+    """Derive floating-region surface elevation from thickness by flotation."""
+
+    if hasattr(scale, "dynamic_scale"):
+        rho = scale.dynamic_scale.rho
+        rho_w = scale.dynamic_scale.rho_w
+        h_mean = scale.data_mean.h_mean
+        s_mean = scale.data_mean.s_mean
+        s_range = scale.data_range.s_range
+    else:
+        # Legacy callers pass ``(data_mean, data_range)`` instead of
+        # ``SubScaleResult``; keep that path until the old wrappers retire.
+        data_mean, data_range = scale
+        rho = 917.0
+        rho_w = 1023.0
+        h_mean = data_mean[4]
+        s_mean = data_mean[5] if data_mean.shape[0] > 5 else 0.0
+        s_range = data_range[5] if data_range.shape[0] > 5 else h_mean
+    h = uvhs[:, 2:3] * h_mean if uvhs.ndim == 2 else uvhs[2] * h_mean
+    s = (rho_w - rho) * h / rho_w
+    s_n = (s - s_mean) / s_range
+    if uvhs.ndim == 2:
+        return jnp.hstack([uvhs[:, 0:3], s_n])
+    return jnp.hstack([uvhs[0:3], jnp.array([s_n])])
+
+
+def is_embedded_net(params):
+    """Detect whether the final layer is a Fourier-feature embedding matrix."""
+
+    if len(params) < 2:
+        return False
+    weight, bias = params[-1]
+    return weight.ndim == 2 and bias.ndim == 1 and weight.shape[1] == 2 and weight.shape[0] == bias.shape[0]
+
 
 # define the basic formation of neural network
 def neural_net(params, x, scl, act_s=0):
     '''
     :param params: weights and biases
-    :param x: input data [matrix with shape [N, m]]; m is number of inputs)
+    :param x: input data [array with shape [m]]; m is number of inputs)
     :param scl: scale factor for the first layer
     :param act_s: activation mode:
                   0 = tanh everywhere
@@ -21,13 +55,27 @@ def neural_net(params, x, scl, act_s=0):
                   2 = sin on first hidden layer, tanh on rest (MSNN correction)
     :return: neural network output [matrix with shape [N, n]]; n is number of outputs)
     '''
+    # jdb.print('params len = {s}', s=len(params))
+    # for i in range(len(params)):
+    #     jdb.print('params {i} shape = {s}', i=i, s=params[i].shape)
+    # jdb.print('x shape = {s}', s=x.shape)
     # choose the activation function for first and remaining layers
     first_actv = [jnp.tanh, jnp.sin, jnp.sin][act_s]
     rest_actv  = [jnp.tanh, jnp.sin, jnp.tanh][act_s]
     # normalize the input
     H = x  # input has been normalized
+
+    if is_embedded_net(params):
+        embed_layer = params[-1]
+        standard_params = params[:-1]
+        B = lax.stop_gradient(embed_layer[0])
+        x_proj = jnp.dot(x, B.T) * 2 * jnp.pi
+        H = jnp.concatenate([jnp.sin(x_proj), jnp.cos(x_proj)], axis=-1)
+    else:
+        standard_params = params
+
     # separate the first, hidden and last layers
-    first, *hidden, last = params
+    first, *hidden, last = standard_params
     # calculate the first layers output with right scale
     H = first_actv(jnp.dot(H, first[0]) * scl + first[1])
     # calculate the middle layers output
@@ -40,31 +88,49 @@ def neural_net(params, x, scl, act_s=0):
 
 # wrapper to create solution function with given domain size
 def solu_create(scale, scl=1, act_s=0, basal_mask=None):
-    '''
-    :param limit: domain size of the input
-    :return: function of the solution (a callable)
-    '''
-    # create default basal mask if not provided (all floating)
+    """Create XPINN solution and gradient functions for all sub-regions."""
+
+    single_region_scale = (
+        isinstance(scale, (list, tuple))
+        and len(scale) == 2
+        and not hasattr(scale[0], "dynamic_scale")
+        and hasattr(scale[0], "shape")
+    )
+
+    def region_scale(idx):
+        return scale if single_region_scale else scale[int(idx)]
+
+    def uses_legacy_scale(idx):
+        return not hasattr(region_scale(idx), "dynamic_scale")
+
+    def is_basal_region(idx):
+        idx = int(idx)
+        return False if idx >= len(basal_mask) else basal_mask[idx]
+
     if basal_mask is None:
-        ng = len(scale)
+        ng = 1 if single_region_scale else len(scale)
         basal_mask = [False] * ng
 
     def f(params, x, idx):
+        idx = int(idx)
         # generate the NN
         uvh = neural_net(params['net_u'][idx], x, scl, act_s)
         mu = neural_net(params['net_mu'][idx], x, scl, act_s)
-        
-        if basal_mask[idx]:
-            # jdb.print('......Doing forward calculation for a grounded region. regionIdx={x}', x=idx)
+
+        if is_basal_region(idx):
             c = neural_net(params['net_c'][idx], x, scl, act_s)
             sol = jnp.hstack([uvh, jnp.exp(mu), jnp.exp(c)])
+        elif uses_legacy_scale(idx):
+            sol = jnp.hstack([uvh[:, 0:3], jnp.exp(mu)]) if uvh.ndim == 2 else jnp.hstack([uvh[0:3], jnp.exp(mu)])
         else:
-            # jdb.print('......Doing forward calculation for a floating region. regionIdx={x}', x=idx)
-            sol = jnp.hstack([uvh, jnp.exp(mu)])
+            uvh = floating_surface(uvh, region_scale(idx))
+            sol = jnp.hstack([uvh, jnp.exp(mu), jnp.zeros_like(mu)])
+
         return sol
 
     def gradf(params, x, idx):
-        drange = scale[idx][1]
+        idx = int(idx)
+        drange = region_scale(idx)[1]
         lx0, ly0, u0, v0 = drange[0:4]
         u0m = lax.max(u0, v0)
         l0m = lax.min(lx0, ly0)
@@ -72,167 +138,35 @@ def solu_create(scale, scl=1, act_s=0, basal_mask=None):
         rv0 = v0 / u0m
         rx0 = lx0 / l0m
         ry0 = ly0 / l0m
+
+        # [IMPORTANT NOTE]: The gradf function is NOT used to compute the equation residuals
+        #                   Therefore, the same scaling here must be done again when computing them.
         coeff = jnp.hstack([ru0/rx0, ru0/ry0, rv0/rx0, rv0/ry0, 1/rx0, 1/ry0])
-        # load the network
-        net = lambda x: f(params, x, idx)
-        # calculate the gradient
-        grad = vectgrad(net, x)[0]
+
+        def grad_point(z):
+            jac = jax.jacfwd(lambda zz: f(params, zz, idx)[:6])(z)
+            return jnp.ravel(jac, order='C')
+
+        grad = jax.vmap(grad_point)(x) if x.ndim == 2 else grad_point(x)
+
         # ensure that the velocity gradient is normalize by the same scale
         # (this is an important step to compute the normalized strain rate)
-        duvh = grad[:, 0:6] * coeff
+        duvh = grad[:, 0:6] * coeff if grad.ndim == 2 else grad[0:6] * coeff
+
         # calculate the strain rate
-        u_x = duvh[:, 0:1]
-        u_y = duvh[:, 1:2]
-        v_x = duvh[:, 2:3]
-        v_y = duvh[:, 3:4]
+        u_x = duvh[:, 0] if duvh.ndim == 2 else duvh[0]
+        u_y = duvh[:, 1] if duvh.ndim == 2 else duvh[1]
+        v_x = duvh[:, 2] if duvh.ndim == 2 else duvh[2]
+        v_y = duvh[:, 3] if duvh.ndim == 2 else duvh[3]
         strate = (u_x ** 2 + v_y ** 2 + 0.25 * (u_y + v_x) ** 2 + u_x * v_y) ** 0.5
+
         # group the solution
-        gsol = jnp.hstack([duvh, strate])
-        return gsol
-
-    return f, gradf
-
-
-def msnn_solu_create(scale, frozen_stages, active_epsilon, active_kappa,
-                    scl=1, basal_mask=None):
-    """Create a multi-stage prediction function (MSNN combined ansatz).
-
-    The combined prediction is:
-        u_combined(x) = u_0(x) + Σ_{k=1}^{K-1} ε_k ⊙ u_k(x, κ_k)  [frozen]
-                      + ε_K ⊙ u_K(x, κ_K)                          [active, trained]
-
-    where ⊙ denotes element-wise (per-variable) scaling.
-    Epsilon arrays also include eps_mu (and eps_c for grounded) so that
-    log-viscosity and log-basal-friction corrections are also scaled.
-
-    Args:
-        scale: Scale info per sub-region.
-        frozen_stages: List of (params_dict, epsilon_list, kappa) tuples for
-                       all completed stages (including Stage 0).
-                       Stage 0 uses act_s=0 (tanh); higher stages use act_s=2.
-                       epsilon_list[i] is either a scalar ε (Stage 0) or a
-                       jnp array of per-variable ε values for sub-region i.
-        active_epsilon: List of per-variable ε arrays for the current stage,
-                        one per sub-region.  Each is a jnp array of shape
-                        (n_uvh + 1,) for floating or (n_uvh + 2,) for grounded,
-                        where the extra entries are eps_mu (and eps_c).
-                        Can also be a scalar 0.0 to skip the active stage.
-        active_kappa: κ value for the active stage (used as scl).
-        scl: Scale factor for Stage 0 network (default 1).
-        basal_mask: List of booleans per sub-region.
-
-    Returns:
-        (f, gradf): Combined prediction function and its gradient.
-    """
-    if basal_mask is None:
-        ng = len(scale)
-        basal_mask = [False] * ng
-
-    # Pre-compute per-region skip flags at closure-creation time (Python level).
-    # This avoids traced boolean conversions inside JIT.
-    def _is_zero_eps(eps):
-        if isinstance(eps, (int, float)):
-            return eps == 0
-        # eps is a numpy/jnp array — evaluate to concrete bool NOW, not inside JIT
-        return bool(float(jnp.sum(jnp.abs(jnp.asarray(eps)))) == 0.0)
-
-    _skip_active = [_is_zero_eps(active_epsilon[i]) for i in range(len(active_epsilon))]
-
-    def f(params, x, idx):
-        """Combined multi-stage forward pass.
-
-        'params' contains ONLY the active (current) stage parameters.
-        All frozen stages are captured in the closure.
-        """
-        # --- Frozen stages (no gradient) ---
-        sol = jnp.zeros((x.shape[0], 0))  # will be replaced by stage 0
-        mu_total = jnp.zeros((x.shape[0], 1))
-        c_total = jnp.zeros((x.shape[0], 1))
-
-        for stage_idx, (stage_params, eps_list, kappa) in enumerate(frozen_stages):
-            if stage_idx == 0:
-                # Stage 0: standard network (tanh, act_s=0)
-                # NOTE: No stop_gradient here! We need the Jacobian w.r.t. x
-                # for gov_eqn's PDE residual computation (spatial derivatives).
-                # Frozen params are already safe from optimizer updates because
-                # they're captured in the closure, not passed as `params`.
-                uvh = neural_net(stage_params['net_u'][idx], x, scl, act_s=0)
-                mu_net = neural_net(stage_params['net_mu'][idx], x, scl, act_s=0)
-
-                mu_total = mu_total + mu_net
-
-                if basal_mask[idx]:
-                    c_net = neural_net(stage_params['net_c'][idx], x, scl, act_s=0)
-                    c_total = c_total + c_net
-                    sol = jnp.hstack([uvh])  # Append mu and c at the end
-                else:
-                    sol = jnp.hstack([uvh])
-            # else:
-            #     # Higher frozen stages: correction nets (sin-first, act_s=2)
-            #     uvh_corr = neural_net(stage_params['net_u'][idx], x, kappa, act_s=2)
-            #     mu_corr = neural_net(stage_params['net_mu'][idx], x, kappa, act_s=2)
-
-            #     eps = eps_list[idx]
-            #     # Per-variable scaling: eps[:n_uvh] for uvh, eps[n_uvh] for mu
-            #     n_uvh = 4 if basal_mask[idx] else 3
-            #     sol = sol.at[:, :n_uvh].add(eps[:n_uvh] * uvh_corr)
-            #     eps_mu = eps[n_uvh]
-            #     mu_total = mu_total + eps_mu * mu_corr
-
-            #     if basal_mask[idx] and stage_params['net_c'][idx] is not None:
-            #         c_corr = neural_net(stage_params['net_c'][idx], x, kappa, act_s=2)
-            #         eps_c = eps[n_uvh + 1]
-            #         c_total = c_total + eps_c * c_corr
-
-        # --- Active stage (gradients flow through) ---
-        # Skip flag was pre-computed at Python level to avoid traced bool conversion.
-        if not _skip_active[idx]:
-            uvh_active = neural_net(params['net_u'][idx], x, active_kappa, act_s=2)
-            mu_active = neural_net(params['net_mu'][idx], x, active_kappa, act_s=2)
-
-            eps_a = active_epsilon[idx]
-            # Per-variable scaling: eps_a[:n_uvh] for uvh, eps_a[n_uvh] for mu
-            n_uvh = 4 if basal_mask[idx] else 3
-            sol = sol.at[:, :n_uvh].add(eps_a[:n_uvh] * uvh_active)
-            eps_mu_a = eps_a[n_uvh]
-            mu_total = mu_total + eps_mu_a * mu_active
-
-            if basal_mask[idx] and params['net_c'][idx] is not None:
-                c_active = neural_net(params['net_c'][idx], x, active_kappa, act_s=2)
-                eps_c_a = eps_a[n_uvh + 1]
-                c_total = c_total + eps_c_a * c_active
-
-        # Finally, append the exponentiated accumulated variables to the solution
-        if basal_mask[idx]:
-            sol = jnp.hstack([sol, jnp.exp(mu_total), jnp.exp(c_total)])
+        if uses_legacy_scale(idx):
+            gsol = jnp.hstack([duvh, strate[:, None]]) if grad.ndim == 2 else jnp.hstack([duvh, jnp.array([strate])])
+        elif grad.ndim == 2:
+            gsol = jnp.hstack([duvh, strate[:, None], grad])
         else:
-            sol = jnp.hstack([sol, jnp.exp(mu_total)])
-
-        return sol
-
-    def gradf(params, x, idx):
-        drange = scale[idx][1]
-        lx0, ly0, u0, v0 = drange[0:4]
-        u0m = lax.max(u0, v0)
-        l0m = lax.min(lx0, ly0)
-        ru0 = u0 / u0m
-        rv0 = v0 / u0m
-        rx0 = lx0 / l0m
-        ry0 = ly0 / l0m
-        coeff = jnp.hstack([ru0/rx0, ru0/ry0, rv0/rx0, rv0/ry0, 1/rx0, 1/ry0])
-        # load the combined network
-        net = lambda x: f(params, x, idx)
-        # calculate the gradient
-        grad = vectgrad(net, x)[0]
-        # ensure that the velocity gradient is normalized by the same scale
-        duvh = grad[:, 0:6] * coeff
-        # calculate the strain rate
-        u_x = duvh[:, 0:1]
-        u_y = duvh[:, 1:2]
-        v_x = duvh[:, 2:3]
-        v_y = duvh[:, 3:4]
-        strate = (u_x ** 2 + v_y ** 2 + 0.25 * (u_y + v_x) ** 2 + u_x * v_y) ** 0.5
-        gsol = jnp.hstack([duvh, strate])
+            gsol = jnp.hstack([duvh, jnp.array([strate]), grad])
         return gsol
 
     return f, gradf

@@ -115,5 +115,64 @@ def test_network_create(nd, nsub):
     assert output2.shape == pytest.approx((nd, 4))
 
 
+def test_xpinn_embedding_initialization():
+    basal_mask = [False, True, False]
+    embedding_config = [
+        dict(embedding=False, embed_n=8, embed_std=1.0),
+        dict(embedding=True, embed_n=6, embed_std=2.5),
+        dict(embedding=True, embed_n=4, embed_std=0.5),
+    ]
+    trained_params = djax.init_xpinn(keys[0], 4, 25, 3, basal_mask=basal_mask, embedding_config=embedding_config)
+
+    assert trained_params["net_u"][0][0][0].shape == (2, 25)
+    assert len(trained_params["net_u"][0]) == 5
+
+    assert trained_params["net_u"][1][0][0].shape == (12, 25)
+    assert len(trained_params["net_u"][1]) == 6
+    assert trained_params["net_u"][1][-1][0].shape == (6, 2)
+    assert trained_params["net_u"][1][-1][1].shape == (6,)
+
+    assert trained_params["net_mu"][2][0][0].shape == (8, 25)
+    assert trained_params["net_c"][0] is None
+    assert trained_params["net_c"][1][-1][0].shape == (6, 2)
 
 
+def test_xpinn_embedding_initialization_by_network():
+    basal_mask = [False, True]
+    embedding_config = [
+        dict(embedding_u=False, embedding_mu=True, embedding_c=True, embed_n=7, embed_std=1.0),
+        dict(embedding_u=False, embedding_mu=True, embedding_c=True, embed_n=5, embed_std=1.5),
+    ]
+    trained_params = djax.init_xpinn(keys[0], 4, 25, 2, basal_mask=basal_mask, embedding_config=embedding_config)
+
+    assert trained_params["net_u"][0][0][0].shape == (2, 25)
+    assert len(trained_params["net_u"][0]) == 5
+    assert trained_params["net_mu"][0][0][0].shape == (14, 25)
+    assert trained_params["net_mu"][0][-1][0].shape == (7, 2)
+    assert trained_params["net_c"][0] is None
+
+    assert trained_params["net_u"][1][0][0].shape == (2, 25)
+    assert len(trained_params["net_u"][1]) == 5
+    assert trained_params["net_mu"][1][0][0].shape == (10, 25)
+    assert trained_params["net_c"][1][0][0].shape == (10, 25)
+    assert trained_params["net_c"][1][-1][0].shape == (5, 2)
+
+
+def test_xpinn_embedding_forward():
+    x = jnp.ones((32, 2))
+    basal_mask = [False, True]
+    embedding_config = [
+        dict(embedding=False, embed_n=8, embed_std=1.0),
+        dict(embedding=True, embed_n=5, embed_std=1.5),
+    ]
+    trained_params = djax.init_xpinn(keys[0], 4, 25, 2, basal_mask=basal_mask, embedding_config=embedding_config)
+    scale = [data_xpinn[0][0][4][0:2], data_xpinn[0][1][4][0:2]]
+    pred_u, grad_u = djax.solu_xpinn(scale, basal_mask=basal_mask)
+
+    output0 = pred_u(trained_params, x, 0)
+    output1 = pred_u(trained_params, x, 1)
+    grad1 = grad_u(trained_params, x, 1)
+
+    assert output0.shape == pytest.approx((32, 4))
+    assert output1.shape == pytest.approx((32, 6))
+    assert grad1.shape == pytest.approx((32, 7))

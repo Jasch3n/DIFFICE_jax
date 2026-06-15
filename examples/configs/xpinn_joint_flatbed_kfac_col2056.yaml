@@ -1,0 +1,67 @@
+name: xpinn_joint_flatbed_kfac
+workflow: joint_inversion
+
+runtime:
+  jax_platform: cpu
+
+data:
+  source: ../../tests/test_xpinn_regression/flatbed_data_xpinns_regression_test.mat
+  interface_collocation:
+    library_size: 4000
+    sample_count: 800
+  sampling_counts:
+    velocity_data: [1028, 1028]
+    thickness_data: [1028, 1028]
+    # Current samplers use the same sampled coordinates for h and s data.
+    surface_data: [1028, 1028]
+    collocation: [2056, 2056]
+    calving_front: [1, 500]
+    matching: 500
+
+model:
+  workflow: xpinn
+  regions:
+    - index: 0
+      kind: grounded
+    - index: 1
+      kind: floating
+  network:
+    depth: 6
+    width: 30
+
+equation:
+  name: ssa_iso
+
+loss:
+  name: joint_inversion
+  matching: true
+  calving_front: true
+  use_gpinn: false
+  active_regions: [0, 1]
+
+training:
+  seed: 8132002
+  global_weights:
+    data: 1.0
+    equation: 0.01
+    calving_front: 0.05
+    matching: 1.0
+    gpinn: 0.0
+    mu_gradient: 0.0
+  stages:
+    - optimizer:
+        name: kfac
+        learning_rate: null
+        damping: .nan
+        parameters:
+          preset: xpinn_joint_inversion_reference
+          log_rate: 200
+          interface_points: all
+          active_regions: [0, 1]
+      iterations: 7500
+      adaptive_sampling: false
+      adaptive_sampling_burn_in: 1000
+      adaptive_sampling_period: 50
+
+artifacts:
+  output_dir: ../../tests/figures/joint_inversion_kfac_col2056

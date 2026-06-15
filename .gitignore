@@ -1,0 +1,3 @@
+tests/figures/
+tests/test_xpinn_regression/**/*.png
+tests/test_xpinn_regression/**/KFAC_step_*.pkl

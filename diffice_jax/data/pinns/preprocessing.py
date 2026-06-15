@@ -10,6 +10,33 @@ from jax import lax
 from jax import debug
 
 
+def _filter_calving_front_boundary(xct, yct, nnct):
+    """Keep only outermost calving-front coordinates for each normal direction.
+
+    Some synthetic fixtures store a narrow strip near the calving front while
+    assigning every point the boundary normal. The dynamic boundary condition
+    is only valid on the calving front itself, so repeated normal directions
+    are reduced to their maximal outward projection.
+    """
+
+    coords = np.hstack((
+        np.asarray(xct, dtype=np.float64).reshape(-1, 1),
+        np.asarray(yct, dtype=np.float64).reshape(-1, 1),
+    ))
+    normals = np.asarray(nnct, dtype=np.float64)
+    if coords.shape[0] == 0 or normals is None or normals.shape[0] == 0:
+        return xct, yct, nnct
+
+    keep = np.zeros(coords.shape[0], dtype=bool)
+    for normal in np.unique(normals, axis=0):
+        idx = np.where(np.all(normals == normal, axis=1))[0]
+        projection = coords[idx, 0] * normal[0] + coords[idx, 1] * normal[1]
+        tol = 1e-10 * max(1.0, float(np.ptp(projection)))
+        keep[idx] = projection >= np.max(projection) - tol
+
+    return xct[keep], yct[keep], nnct[keep]
+
+
 def normalize_data(data,basal=False, gamma_c=0.33):
     '''
     :param data: original dataset
@@ -41,6 +68,7 @@ def normalize_data(data,basal=False, gamma_c=0.33):
         nnct=None
     else:
         nnct = data['nnct']  # unit vector
+        xct, yct, nnct = _filter_calving_front_boundary(xct, yct, nnct)
 
     # extract variables at the grounding line for basal inversions
     if basal:

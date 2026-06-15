@@ -18,7 +18,13 @@ def eval_RAD_probs(X_col_lib, eval_f, basal=False):
     return probs
 
 # wrapper to create function that can re-sample the dataset and collocation points
-def data_sample_create(data_all, n_pt,basal=False):
+def data_sample_create(data_all, n_pt, basal=False, collocation_library_size=None):
+    """Create a stochastic PINN sampler.
+
+    ``collocation_library_size`` controls the candidate library used for
+    equation residual points. The default preserves the historical expansion
+    behavior, while ``"full"`` uses the full observed ``(x, y)`` coordinate set.
+    """
     # load the data within ice shelf
     X_star = data_all[0]
     U_star = data_all[1]
@@ -35,35 +41,32 @@ def data_sample_create(data_all, n_pt,basal=False):
     n_bd = X_ct.shape[0]
 
     # ================== EXPAND COLLOCATION POINT LIBRARY ==================
-    def expand_col_lib(X_col_library, K, M=4*n_data):
+    def expand_col_lib(X_col_library, K, M):
+        """Interpolate between nearby coordinates to build a larger library."""
+
         print(f' . . . . . . Expanding collocation point library from {n_data} to {M} points')
         nn = NearestNeighbors(n_neighbors=K).fit(X_col_library)
-        distances, indices = nn.kneighbors(X_col_library)
-        key_aug = random.PRNGKey(0)  # base key; will be overridden per-call inside dataf if needed
+        _, indices = nn.kneighbors(X_col_library)
 
-        # For each point, randomly pick one of its K neighbors and interpolate
-        key_aug, k1, k2 = random.split(random.PRNGKey(42), 3)
-
-        # Draw random neighbor indices (which neighbor to interpolate toward) for all library points
-        neighbor_choices = random.randint(k1, shape=(M,), minval=1, maxval=K)  # skip self (index 0)
+        # Randomly choose base points, one nearby neighbor per base point, and
+        # an interpolation weight between the two coordinates.
+        key_aug, k1, k2, k3 = random.split(random.PRNGKey(42), 4)
+        neighbor_choices = random.randint(k1, shape=(M,), minval=1, maxval=K)
         base_choices = random.choice(k2, jnp.arange(n_data), shape=(M,))
-
-        # Random interpolation weights in [0, 1]
-        key_aug, k3 = random.split(key_aug)
         alphas = random.uniform(k3, shape=(M, 1))
 
-        # Gather base points and their chosen neighbors
         X_lib = jnp.array(X_col_library)
-        base_pts = X_lib[base_choices]                                           # (M, d)
-        neighbor_idx = jnp.array(indices)[base_choices, neighbor_choices]        # (M,)
-        neighbor_pts = X_lib[neighbor_idx]                                       # (M, d)
+        base_pts = X_lib[base_choices]
+        neighbor_idx = jnp.array(indices)[base_choices, neighbor_choices]
+        neighbor_pts = X_lib[neighbor_idx]
+        return alphas * base_pts + (1 - alphas) * neighbor_pts
 
-        # Interpolate: new_point = alpha * base + (1 - alpha) * neighbor
-        X_col_lib = alphas * base_pts + (1 - alphas) * neighbor_pts       # (M, d)
-        return X_col_lib
-    
-    M = 6000
-    X_col_lib = expand_col_lib(X_star[0], 40, M=M)
+    if collocation_library_size == "full":
+        X_col_lib = X_star[0]
+    else:
+        M = 4 * n_data if collocation_library_size is None else int(collocation_library_size)
+        X_col_lib = expand_col_lib(X_star[0], 40, M=M)
+    M = X_col_lib.shape[0]
 
     # define the function that can re-sampling for each calling
     def dataf(key, eval_adaptive=False, adaptive_probs=None, adapt_data=False, mix_adaptive=False, eval_f=None):
@@ -120,4 +123,3 @@ def data_sample_create(data_all, n_pt,basal=False):
             data = dict(smp=[X_smp, U_smp, Xh_smp, H_smp], col=[X_col],  bd=[X_bd, nn_bd])
         return data
     return dataf
-

@@ -11,18 +11,266 @@ os.environ.setdefault("JAX_PLATFORM_NAME", "cpu")
 os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib-diffice-jax")
 
 import jax
+import matplotlib
 import numpy as np
 
 import diffice_jax as djax
-from tests.test_xpinn_joint_inversion_kfac import (
-    ARTIFACT_PREFIX,
-    C_REL_MAE_MIN_TRUTH,
-    save_equation_residuals,
-    save_inversion_comparison,
-    save_loss_curve,
-    save_x_equation_term_ratios,
-    _save_plot_cache,
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+from matplotlib import font_manager
+
+
+ARTIFACT_PREFIX = "test_xpinn_joint_inversion_flatbed"
+C_REL_MAE_MIN_TRUTH = 1e-3
+DEFAULT_FONT_FAMILY = "Noto Sans"
+DEFAULT_FONT_PATH = Path.home() / "Library" / "Fonts" / "NotoSans-Regular.ttf"
+DEFAULT_FONT_DIR = Path.home() / "Library" / "Fonts"
+DEFAULT_FONT_FILES = (
+    "NotoSans-Light.ttf",
+    "NotoSans-Thin.ttf",
+    "NotoSans-ExtraThin.ttf",
+    "NotoSans-Regular.ttf",
+    "NotoSans-Italic.ttf",
+    "NotoSans-Bold.ttf",
+    "NotoSans-BoldItalic.ttf",
+    "NotoSans-ExtraBold.ttf",
+    "NotoSans-ExtraBoldItalic.ttf",
 )
+
+
+def configure_plot_font(font_family=DEFAULT_FONT_FAMILY, font_path=DEFAULT_FONT_PATH):
+    font_path = Path(font_path).expanduser() if font_path else None
+    for font_name in DEFAULT_FONT_FILES:
+        candidate = DEFAULT_FONT_DIR / font_name
+        if candidate.exists():
+            font_manager.fontManager.addfont(str(candidate))
+    if font_path is not None and font_path.exists():
+        font_manager.fontManager.addfont(str(font_path))
+    plt.rcParams["font.family"] = "sans-serif"
+    plt.rcParams["font.sans-serif"] = [font_family, "DejaVu Sans", "Ubuntu"]
+    plt.rcParams["font.weight"] = 300
+    plt.rcParams["font.size"] = 11
+    plt.rcParams["axes.labelweight"] = 300
+    plt.rcParams["axes.titleweight"] = 700
+    plt.rcParams["figure.titleweight"] = 700
+    plt.rcParams["axes.labelsize"] = 9
+    plt.rcParams["legend.fontsize"] = 9
+    plt.rcParams["xtick.labelsize"] = 9
+    plt.rcParams["ytick.labelsize"] = 9
+    plt.rcParams["mathtext.fontset"] = "custom"
+    plt.rcParams["mathtext.rm"] = font_family
+    plt.rcParams["mathtext.it"] = f"{font_family}:italic"
+    plt.rcParams["mathtext.bf"] = f"{font_family}:bold"
+    plt.rcParams["mathtext.default"] = "regular"
+
+
+configure_plot_font()
+
+
+def _set_axis_font_weight(
+    ax,
+    label_weight=plt.rcParams["axes.labelweight"],
+    title_weight=plt.rcParams["axes.titleweight"],
+):
+    ax.xaxis.label.set_fontweight(label_weight)
+    ax.yaxis.label.set_fontweight(label_weight)
+    ax.title.set_fontweight(title_weight)
+    for label in ax.get_xticklabels() + ax.get_yticklabels():
+        label.set_fontweight(label_weight)
+
+
+def _field_stats(pred, truth, min_truth=None):
+    pred = np.asarray(pred).reshape(-1)
+    truth = np.asarray(truth).reshape(-1)
+    mask = np.isfinite(pred) & np.isfinite(truth)
+    if min_truth is not None:
+        mask &= np.abs(truth) > min_truth
+    pred = pred[mask]
+    truth = truth[mask]
+    if truth.size == 0:
+        return np.nan
+    rel_mae = np.mean(np.abs(pred - truth)) / np.maximum(np.mean(np.abs(truth)), 1e-12)
+    return float(rel_mae)
+
+
+def _concat_region_values(regions, key):
+    if not regions:
+        return np.asarray([])
+    return np.concatenate([np.asarray(region[key]).reshape(-1) for region in regions])
+
+
+def _domain_bounds(regions):
+    x = _concat_region_values(regions, "x") / 1e3
+    y = _concat_region_values(regions, "y") / 1e3
+    return (
+        float(np.nanmin(x)),
+        float(np.nanmax(x)),
+        float(np.nanmin(y)),
+        float(np.nanmax(y)),
+    )
+
+
+def _add_colorbar(fig, ax, image, label):
+    cbar = fig.colorbar(image, ax=ax, fraction=0.015, pad=0.05)
+    cbar.set_label(label)
+    _set_axis_font_weight(cbar.ax)
+
+
+def _tripcolor_regions(ax, regions, key, title, cmap, vmin, vmax):
+    image = None
+    for region in regions:
+        values = np.asarray(region[key]).reshape(-1)
+        mask = np.isfinite(region["x"]) & np.isfinite(region["y"]) & np.isfinite(values)
+        if np.count_nonzero(mask) < 3:
+            continue
+        xy = np.column_stack([np.asarray(region["x"])[mask], np.asarray(region["y"])[mask]])
+        _, keep = np.unique(xy, axis=0, return_index=True)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", message="invalid value encountered in cast", category=RuntimeWarning)
+            image = ax.tripcolor(
+                xy[keep, 0] / 1e3,
+                xy[keep, 1] / 1e3,
+                values[mask][keep],
+                shading="flat",
+                cmap=cmap,
+                vmin=vmin,
+                vmax=vmax,
+            )
+    ax.set_title(title)
+    ax.set_xlabel("x [km]")
+    ax.set_ylabel("y [km]")
+    _set_axis_font_weight(ax)
+    return image
+
+
+def save_inversion_comparison(path, mu_regions, c_regions):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    mu_true = _concat_region_values(mu_regions, "truth")
+    mu_pred = _concat_region_values(mu_regions, "pred")
+    c_true = _concat_region_values(c_regions, "truth")
+    c_pred = _concat_region_values(c_regions, "pred")
+    c_mismatch = _concat_region_values(c_regions, "mismatch")
+    mu_rel_mae = _field_stats(mu_pred, mu_true)
+    c_rel_mae = _field_stats(c_pred, c_true, min_truth=C_REL_MAE_MIN_TRUTH)
+
+    mu_vmin = np.nanpercentile(mu_true, 5)
+    mu_vmax = np.nanpercentile(mu_true, 95)
+    c_vmin = np.nanpercentile(c_true, 5) if c_true.size else np.nan
+    c_vmax = np.nanpercentile(c_true, 80) if c_true.size else np.nan
+    c_mismatch_vmax = 0.15 if c_mismatch.size else np.nan
+    x_min, x_max, y_min, y_max = _domain_bounds(mu_regions)
+
+    fig, axs = plt.subplots(3, 2, figsize=(10, 6), sharex=True, sharey=True)
+    panels = [
+        (axs[0, 0], mu_regions, "truth", "ground truth viscosity $\\mu$", "viridis", mu_vmin, mu_vmax, "Pa s"),
+        (axs[0, 1], c_regions, "truth", "ground truth basal friction $C$", "cool", c_vmin, c_vmax, "Pa s/m"),
+        (axs[1, 0], mu_regions, "pred", "inferred viscosity $\\mu$", "viridis", mu_vmin, mu_vmax, "Pa s"),
+        (axs[1, 1], c_regions, "pred", "inferred basal friction $C$", "cool", c_vmin, c_vmax, "Pa s/m"),
+        (axs[2, 0], mu_regions, "mismatch", f"relative absolute error (mean = {100.0 * mu_rel_mae:.2f}%)", "magma", 0.0, 0.15, "|error| / |truth|"),
+        (axs[2, 1], c_regions, "mismatch", f"relative absolute error (mean = {100.0 * c_rel_mae:.2f}%)", "magma", 0.0, c_mismatch_vmax, "|error| / |truth|"),
+    ]
+    for ax, regions, key, title, cmap, lo, hi, label in panels:
+        image = _tripcolor_regions(ax, regions, key, title, cmap, lo, hi)
+        ax.set_xlim(x_min, x_max)
+        ax.set_ylim(y_min, y_max)
+        ax.set_box_aspect(1 / 3)
+        if image is not None:
+            _add_colorbar(fig, ax, image, label)
+    fig.suptitle("Synthetic XPINN Joint Inversion (K-FAC Optimizer)", fontsize=15, fontweight=800)
+    plt.tight_layout()
+    fig.canvas.draw()
+    for ax in fig.axes:
+        _set_axis_font_weight(ax)
+    fig.savefig(path, dpi=220)
+    plt.close(fig)
+    return mu_rel_mae, c_rel_mae
+
+
+def _signed_percentile_limit(regions, key="value", percentile=98, floor=1e-12):
+    values = _concat_region_values(regions, key)
+    values = values[np.isfinite(values)]
+    if values.size == 0:
+        return 1.0
+    return float(max(np.nanpercentile(np.abs(values), percentile), floor))
+
+
+def save_equation_residuals(path, residual_regions):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    x_min, x_max, y_min, y_max = _domain_bounds(residual_regions["x"])
+    x_vmax = 0.1
+    y_vmax = 0.1
+    fig, axs = plt.subplots(2, 1, figsize=(6, 5), sharex=True, sharey=True)
+    panels = [
+        (axs[0], residual_regions["x"], "relative x-equation residual", "coolwarm", -x_vmax, x_vmax, "normalized residual"),
+        (axs[1], residual_regions["y"], "relative y-equation residual", "coolwarm", -y_vmax, y_vmax, "normalized residual"),
+    ]
+    for ax, regions, title, cmap, lo, hi, label in panels:
+        image = _tripcolor_regions(ax, regions, "value", title, cmap, lo, hi)
+        ax.set_xlim(x_min, x_max)
+        ax.set_ylim(y_min, y_max)
+        ax.set_box_aspect(1 / 3)
+        if image is not None:
+            _add_colorbar(fig, ax, image, label)
+    fig.suptitle("Synthetic XPINN Equations Residuals", fontsize=15, fontweight=800)
+    plt.tight_layout()
+    for ax in fig.axes:
+        _set_axis_font_weight(ax)
+    fig.savefig(path, dpi=220)
+    plt.close(fig)
+
+
+def save_x_equation_term_ratios(path, term_regions, bounds_regions):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    x_min, x_max, y_min, y_max = _domain_bounds(bounds_regions)
+    fig, axs = plt.subplots(3, 1, figsize=(6, 7), sharex=True, sharey=True)
+    panels = [
+        (axs[0], term_regions["term1_1"], r"viscous gradient x", 1.0),
+        (axs[1], term_regions["term12_2"], r"viscous gradient y", 1.0),
+        (axs[2], term_regions["term1_4"], r"basal friction $\tau_{bx}$", 1.0),
+    ]
+    for ax, regions, title, bound in panels:
+        _signed_percentile_limit(regions)
+        image = _tripcolor_regions(ax, regions, "value", title, "coolwarm", -bound, bound)
+        ax.set_xlim(x_min, x_max)
+        ax.set_ylim(y_min, y_max)
+        ax.set_box_aspect(1 / 3)
+        if image is not None:
+            _add_colorbar(fig, ax, image, "signed ratio")
+    fig.suptitle(r"x-equation terms relative to driving stress", fontsize=15, fontweight=800)
+    plt.tight_layout()
+    for ax in fig.axes:
+        _set_axis_font_weight(ax)
+    fig.savefig(path, dpi=220)
+    plt.close(fig)
+
+
+def save_loss_curve(path, history):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    history = np.asarray(history, dtype=float)
+    if history.size == 0:
+        return
+    order = np.argsort(history[:, 0])
+    steps = history[order, 0]
+    losses = history[order, 1]
+    mask = np.isfinite(steps) & np.isfinite(losses) & (losses > 0.0)
+    fig, ax = plt.subplots(figsize=(7.2, 4.2), constrained_layout=True)
+    ax.semilogy(steps[mask], losses[mask], color="black", linewidth=1.8)
+    ax.set_xlabel("KFAC iteration")
+    ax.set_ylabel("Residual objective")
+    ax.set_title("Synthetic XPINN joint-inversion KFAC loss")
+    _set_axis_font_weight(ax)
+    ax.grid(True, which="both", alpha=0.25)
+    fig.canvas.draw()
+    _set_axis_font_weight(ax)
+    fig.savefig(path, dpi=220)
+    plt.close(fig)
+
+
+def _save_plot_cache(path, cache):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "wb") as f:
+        pickle.dump(cache, f)
 
 
 def _load_pickle(path):
@@ -33,12 +281,12 @@ def _load_pickle(path):
 def _plot_paths(plot_dir, tag):
     plot_dir.mkdir(parents=True, exist_ok=True)
     return dict(
-        output=plot_dir / f"{ARTIFACT_PREFIX}_{tag}.npz",
-        fields=plot_dir / f"{ARTIFACT_PREFIX}_{tag}_fields.png",
-        loss=plot_dir / f"{ARTIFACT_PREFIX}_{tag}_loss.png",
-        equation_residuals=plot_dir / f"{ARTIFACT_PREFIX}_{tag}_equation_residuals.png",
-        x_term_ratios=plot_dir / f"{ARTIFACT_PREFIX}_{tag}_x_term_ratios.png",
-        cache=plot_dir / f"{ARTIFACT_PREFIX}_{tag}_plot_cache.pkl",
+        output=plot_dir / "data.npz",
+        fields=plot_dir / "fields.png",
+        loss=plot_dir / "loss.png",
+        equation_residuals=plot_dir / "equation_residuals.png",
+        x_term_ratios=plot_dir / "x_term_ratio.png",
+        cache=plot_dir / "plot_cache.pkl",
     )
 
 

@@ -12,7 +12,7 @@ runtime:
   jax_compilation_cache_include_metadata_in_key: false
 
 data:
-  source: ../synthetic_data/flatbed_data_xpinns_regression_test.mat
+  source: ../flatbed_data_xpinns_regression_test.mat
   interface_collocation:
     library_size: 600
     sample_count: 600

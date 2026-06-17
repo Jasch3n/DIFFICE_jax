@@ -5,7 +5,7 @@ runtime:
   jax_platform: cpu
 
 data:
-  source: ../synthetic_data/flatbed_data_xpinns_regression_test.mat
+  source: ../flatbed_data_xpinns_regression_test.mat
   interface_collocation:
     library_size: 4000
     sample_count: 800

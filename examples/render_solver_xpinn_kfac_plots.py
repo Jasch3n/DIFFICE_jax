@@ -15,9 +15,12 @@ import numpy as np
 
 import diffice_jax as djax
 from tests.test_xpinn_joint_inversion_kfac import (
+    ARTIFACT_PREFIX,
     C_REL_MAE_MIN_TRUTH,
-    render_plot_cache,
-    _plot_paths,
+    save_equation_residuals,
+    save_inversion_comparison,
+    save_loss_curve,
+    save_x_equation_term_ratios,
     _save_plot_cache,
 )
 
@@ -25,6 +28,46 @@ from tests.test_xpinn_joint_inversion_kfac import (
 def _load_pickle(path):
     with open(path, "rb") as f:
         return pickle.load(f)
+
+
+def _plot_paths(plot_dir, tag):
+    plot_dir.mkdir(parents=True, exist_ok=True)
+    return dict(
+        output=plot_dir / f"{ARTIFACT_PREFIX}_{tag}.npz",
+        fields=plot_dir / f"{ARTIFACT_PREFIX}_{tag}_fields.png",
+        loss=plot_dir / f"{ARTIFACT_PREFIX}_{tag}_loss.png",
+        equation_residuals=plot_dir / f"{ARTIFACT_PREFIX}_{tag}_equation_residuals.png",
+        x_term_ratios=plot_dir / f"{ARTIFACT_PREFIX}_{tag}_x_term_ratios.png",
+        cache=plot_dir / f"{ARTIFACT_PREFIX}_{tag}_plot_cache.pkl",
+    )
+
+
+def _render_plot_cache(cache_path, plot_dir, tag=None):
+    cache_path = Path(cache_path)
+    cache = _load_pickle(cache_path)
+    tag = tag or cache["tag"]
+    paths = _plot_paths(plot_dir, tag)
+    mu_rel_mae, c_rel_mae = save_inversion_comparison(
+        paths["fields"],
+        cache["mu_regions"],
+        cache["c_regions"],
+    )
+    save_equation_residuals(paths["equation_residuals"], cache["residual_regions"])
+    save_x_equation_term_ratios(paths["x_term_ratios"], cache["term_regions"], cache["residual_regions"]["x"])
+    save_loss_curve(paths["loss"], cache["loss_history"])
+    np.savez(
+        paths["output"],
+        **cache["metadata"],
+        mu_rel_mae=mu_rel_mae,
+        c_rel_mae=c_rel_mae,
+        target_c_rel_mae=np.nan,
+        field_comparison_path=str(paths["fields"]),
+        equation_residual_path=str(paths["equation_residuals"]),
+        x_term_ratio_path=str(paths["x_term_ratios"]),
+        loss_curve_path=str(paths["loss"]),
+        plot_cache_path=str(cache_path),
+    )
+    return paths["output"], paths["fields"], paths["loss"], paths["equation_residuals"], paths["x_term_ratios"], cache_path, mu_rel_mae, c_rel_mae
 
 
 def _resolve_solver_dir(config, solver_dir):
@@ -164,7 +207,8 @@ def render_from_saved_solver(config_path, solver_dir, tag):
     diagnostics = solver.predict_equation_diagnostics(points="velocity")
     predict_seconds = time.perf_counter() - start
 
-    paths = _plot_paths(tag)
+    plot_dir = solver_dir / "plots"
+    paths = _plot_paths(plot_dir, tag)
     metadata = dict(
         optimizer="KFAC",
         requested_iterations=int(config.training["stages"][0]["iterations"]),
@@ -189,7 +233,7 @@ def render_from_saved_solver(config_path, solver_dir, tag):
         solver_dir=str(solver_dir),
     )
     _save_plot_cache(paths["cache"], _prediction_plot_cache(solver, predictions, diagnostics, loss_history, tag, metadata))
-    return render_plot_cache(paths["cache"], tag=tag)
+    return _render_plot_cache(paths["cache"], plot_dir, tag=tag)
 
 
 def main():

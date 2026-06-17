@@ -1,0 +1,282 @@
+import jax.numpy as jnp
+import jax
+import jax.debug as jdb
+
+# define the mean squared error
+def ms_error(diff):
+    return jnp.mean(jnp.square(diff), axis=0)
+
+def ma_error(diff):
+    return jnp.mean(jnp.abs(diff), axis=0)
+
+def u_mag(u):
+    return jnp.sqrt(jnp.sum(jnp.square(u), 1)) 
+
+#%% loss for inferring isotropic viscosity
+
+def loss_iso_create(predf, eqn_all, scale, lw, basal=False):
+    ''' a function factory to create the loss function based on given info
+    :param predf: neural network function for solutions
+    :param eqn_all: governing equation and boundary conditions
+    :return: a loss function (callable)
+    '''
+    # is_basal = basal
+    # print("loss_iso_create thinks is_basal is", is_basal)
+    # separate the governing equation and boundary conditions
+    gov_eqn, front_eqn = eqn_all
+    # print("DEBUG: loss_iso_create thinks basal is", basal)
+
+    # loss function used for the PINN training
+    def loss_fun(params, data):
+        # Handle joint params (log_eps, network_params) for IBPINNs adaptive weighting
+        if isinstance(params, tuple) and len(params) == 2 and isinstance(params[0], dict):
+            log_eps, net_params = params
+        else:
+            log_eps, net_params = None, params
+
+        # print("loss_fun thinks is_basal is", is_basal)
+        # print("DEBUG: loss_fun thinks basal is", basal)
+        # print("DEBUG: params length:", len(params))
+        # create the function for gradient calculation involves input Z only
+        net = lambda z: predf(net_params, z)
+        # load the velocity data and their position
+        x_smp = data['smp'][0]
+        u_smp = data['smp'][1]
+
+        # load the thickness data and their position
+        xh_smp = data['smp'][2]
+        h_smp = data['smp'][3]
+        if basal:
+            s_smp = data['smp'][4]
+
+        # load the position and weight of collocation points
+        x_col = data['col'][0]
+        x_bd = data['bd'][0]
+        if basal:
+            u_bd = data['bd'][1]
+            h_bd = data['bd'][2]
+            mu_bd = data['bd'][3]
+        else:
+            nn_bd = data['bd'][1]
+
+        # calculate the gradient of phi at origin
+        u_pred = net(x_smp)[:, 0:2]
+        h_pred = net(xh_smp)[:, 2:3]
+        if basal: 
+            s_pred = net(xh_smp)[:, 3:4]
+
+        f_pred, term = gov_eqn(net, x_col, scale, basal=basal)
+        f_pred_bd, _ = gov_eqn(net, x_bd, scale, basal=basal)
+        if basal:
+            # Get network predictions 
+            gl_pred = net(x_bd)
+            u_bd_pred = jnp.hstack((gl_pred[:, 0:1], gl_pred[:, 1:2]))
+            h_bd_pred = gl_pred[:, 2:3].flatten()
+            # s_bd_pred = gl_pred[:, 3:4].flatten()
+            mu_bd_pred = gl_pred[:, 4:5].flatten()
+
+            # Calculate boundary mismatch
+            u_bd_err = ms_error(u_bd_pred - u_bd)
+            h_bd_err = ms_error(h_bd_pred.flatten() - h_bd.flatten())
+            mu_bd_err = ms_error(jnp.log(mu_bd_pred.flatten()) - jnp.log(mu_bd.flatten()))
+            # jdb.print('u_bd_err shape = {x}', x=u_bd_err.shape)
+            # jdb.print('h_bd_err shape = {x}', x=h_bd_err.shape)
+            # jdb.print('mu_bd_err shape = {x}', x=mu_bd_err.shape)
+            bd_err = jnp.hstack((u_bd_err, h_bd_err, mu_bd_err))
+        else:
+            f_bd, term_bd = front_eqn(net, x_bd, nn_bd, scale)
+
+
+        # calculate the mean squared root error of normalization cond.
+        data_u_err = ms_error(u_pred - u_smp)
+        data_h_err = ms_error(h_pred - h_smp)
+        if basal:
+            data_s_err = ms_error(s_pred - s_smp)
+            eps = 1e-7
+            data_log_u_err = ms_error( jnp.log( (u_mag(u_pred)+eps) / (u_mag(u_smp)+eps) ))
+
+        if basal:
+            data_err = jnp.hstack((data_u_err, data_h_err, data_s_err))
+        else:
+            data_err = jnp.hstack((data_u_err, data_h_err))
+
+        # calculate the mean squared root error of equation
+        if basal:
+            # e1_err = ma_error(f_pred[:,0:1] - f_pred[:,1:2])
+            # e2_err = ma_error(f_pred[:,2:3] - f_pred[:,3:4])
+            # eqn_err = jnp.hstack([e1_err, e2_err])
+            eqn_err = ms_error(f_pred)
+            # bd_eqn_err = ms_error(f_pred_bd)
+            # visc_1 = term[:, 9:10]
+            # grav_basal_1 = term[:, 10:11]
+            # visc_2 = term[:, 11:12]
+            # grav_basal_2 = term[:, 12:13]
+            # mag_err = jnp.hstack([ms_error(jnp.abs(visc_1) - jnp.abs(grav_basal_1)), ms_error(jnp.abs(visc_2)-jnp.abs(grav_basal_2))])
+        else:
+            eqn_err = ms_error(f_pred)
+        # calculate the mean squared root error of boundary condition
+    
+        if not basal:
+            bd_err = ms_error(f_bd)
+
+        # set the weight for each condition and equation
+        if basal:
+            data_weight = jnp.array([1., 1., 0.6, 0.6]) # include a weight for surface elevation
+        else:
+            data_weight = jnp.array([1., 1., 0.6])
+
+        eqn_weight = jnp.array([1., 1.])
+        if basal:
+            mag_weight = jnp.array([1., 1.])
+
+        if basal:
+            # bd_weight = jnp.array([1., 1., 1., 0.5, 0.5])
+            # bd_weight = jnp.array([1., 1., 1.])
+            bd_weight = jnp.array([0.3, 0.3, 0.3, 1.0])
+        else:
+            bd_weight = jnp.array([1., 1.])
+
+        if log_eps is not None:
+            # Adaptive loss weighting (IBPINN strategy)
+            eps_d = jnp.exp(log_eps.get('d', 0.0))
+            eps_e = jnp.exp(log_eps.get('e', 0.0))
+            eps_b = jnp.exp(log_eps.get('b', 0.0))
+            
+            # Use raw unweighted loss components, then scale by 1/(2*eps^2) + log(eps)
+            loss_data = jnp.sum(data_err * data_weight)
+            loss_eqn = jnp.sum(eqn_err * eqn_weight)
+            loss_bd = jnp.sum(bd_err * bd_weight)
+            
+            weighted_loss_data = loss_data / (2 * eps_d**2) + jnp.log(eps_d)
+            weighted_loss_eqn = loss_eqn / (2 * eps_e**2) + jnp.log(eps_e)
+            weighted_loss_bd = loss_bd / (2 * eps_b**2) + jnp.log(eps_b)
+            
+            loss_components = weighted_loss_data + weighted_loss_eqn + weighted_loss_bd
+            # Keep `loss_data, loss_eqn, loss_bd` as is for reporting in loss_info
+        else:
+            # calculate the overall data loss and equation loss
+            loss_data = jnp.sum(data_err * data_weight)
+            loss_eqn = jnp.sum(eqn_err * eqn_weight)
+            # if basal:
+            #     loss_bd_eqn = jnp.sum(bd_eqn_err * eqn_weight)
+            # if basal:
+            #     loss_mag = jnp.sum(mag_err * mag_weight)
+            loss_bd = jnp.sum(bd_err * bd_weight)
+            loss_components = lw[0]*loss_data + lw[1]*loss_eqn + lw[2]*loss_bd
+
+        # load the loss_ref
+        loss_ref = loss_fun.lref
+        # calculate the total loss
+        # # group the loss of all conditions and equations
+        # loss = (lw[0]*loss_data + lw[1]*loss_eqn + lw[2]*loss_mag + lw[3]*loss_bd) / loss_ref
+        # if basal:
+        loss = loss_components / loss_ref
+        #     loss_info = jnp.hstack([jnp.array([loss, loss_data, loss_eqn, loss_bd]),
+        #                             data_err, eqn_err, bd_err])
+        # elif not basal: # assume domain is all floating
+        #     loss = (lw[0]*loss_data + lw[1]*loss_eqn + lw[2]*loss_bd) / loss_ref
+            # group the loss of all conditions and equations
+        loss_info = jnp.hstack([jnp.array([loss, loss_data, loss_eqn, loss_bd]),
+                                data_err, eqn_err, bd_err])
+            
+        return loss, loss_info
+
+    loss_fun.lref = 1.0
+    return loss_fun
+
+
+#%% loss for inferring anisotropic viscosity
+
+def loss_aniso_create(predf, eqn_all, scale, lw):
+    ''' a function factory to create the loss function based on given info
+    :param predf: neural network function for solutions
+    :param eqn_all: governing equation and boundary conditions
+    :return: a loss function (callable)
+    '''
+
+    # separate the governing equation and boundary conditions
+    gov_eqn, front_eqn = eqn_all
+
+    # loss function used for the PINN training
+    def loss_fun(params, data):
+        # Handle joint params (log_eps, network_params) for IBPINNs adaptive weighting
+        if isinstance(params, tuple) and len(params) == 2 and isinstance(params[0], dict):
+            log_eps, net_params = params
+        else:
+            log_eps, net_params = None, params
+
+        # create the function for gradient calculation involves input Z only
+        net = lambda z: predf(net_params, z)
+        # load the data of normalization condition
+        x_smp = data['smp'][0]
+        u_smp = data['smp'][1]
+        xh_smp = data['smp'][2]
+        h_smp = data['smp'][3]
+
+        # load the position and weight of collocation points
+        x_col = data['col'][0]
+        x_bd = data['bd'][0]
+        nn_bd = data['bd'][1]
+
+        # calculate the gradient of phi at origin
+        output = net(x_smp)
+        u_pred = output[:, 0:2]
+        mu_pred = output[:, 3:4]
+        eta_pred = output[:, 4:5]
+        h_pred = net(xh_smp)[:, 2:3]
+
+        # calculate the residue of equation
+        f_pred, term = gov_eqn(net, x_col, scale)
+        f_bd, term_bd = front_eqn(net, x_bd, nn_bd, scale)
+
+        # calculate the mean squared root error of normalization cond.
+        data_u_err = ms_error(u_pred - u_smp)
+        data_h_err = ms_error(h_pred - h_smp)
+        data_err = jnp.hstack((data_u_err, data_h_err))
+        # calculate the mean squared root error of equation
+        eqn_err = ms_error(f_pred)
+        bd_err = ms_error(f_bd)
+        # calculate the difference between mu and eta
+        sp_err = ms_error((jnp.sqrt(mu_pred) - jnp.sqrt(eta_pred)) / 2)
+
+        # set the weight for each condition and equation
+        data_weight = jnp.array([1., 1., 0.6])
+        eqn_weight = jnp.array([1., 1.])
+        bd_weight = jnp.array([1., 1.])
+
+        # calculate the overall data loss and equation loss
+        loss_data = jnp.sum(data_err * data_weight)
+        loss_eqn = jnp.sum(eqn_err * eqn_weight)
+        loss_bd = jnp.sum(bd_err * bd_weight)
+        loss_sp = jnp.sum(sp_err)
+
+        # load the loss_ref
+        loss_ref = loss_fun.lref
+        # load the weight for the regularization loss
+        wsp = loss_fun.wsp
+
+        if log_eps is not None:
+             # Adaptive loss weighting (IBPINN strategy)
+             eps_d = jnp.exp(log_eps.get('d', 0.0))
+             eps_e = jnp.exp(log_eps.get('e', 0.0))
+             eps_b = jnp.exp(log_eps.get('b', 0.0))
+             
+             weighted_loss_data = loss_data / (2 * eps_d**2) + jnp.log(eps_d)
+             weighted_loss_eqn = loss_eqn / (2 * eps_e**2) + jnp.log(eps_e)
+             weighted_loss_bd = loss_bd / (2 * eps_b**2) + jnp.log(eps_b)
+             
+             # Sp is treated as another loss component with its corresponding weight wsp 
+             loss_components = weighted_loss_data + lw[0] * weighted_loss_eqn + lw[1] * weighted_loss_bd + wsp * loss_sp 
+        else:
+             loss_components = loss_data + lw[0] * loss_eqn + lw[1] * loss_bd + wsp * loss_sp
+
+        # define the total loss
+        loss = loss_components / loss_ref
+        # group the loss of all conditions and equations
+        loss_info = jnp.hstack([jnp.array([loss, loss_data, loss_eqn, loss_bd, loss_sp]),
+                                data_err, eqn_err, bd_err])
+        return loss, loss_info
+
+    loss_fun.lref = 1.0
+    loss_fun.wsp = lw[2]
+    return loss_fun

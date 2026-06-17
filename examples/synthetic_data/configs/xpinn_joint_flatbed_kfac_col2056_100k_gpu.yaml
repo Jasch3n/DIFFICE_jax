@@ -1,0 +1,72 @@
+name: xpinn_joint_flatbed_kfac_col2056_100k_gpu
+workflow: joint_inversion
+
+runtime:
+  jax_platform: cuda
+  jax_compilation_cache_dir: /oak/stanford/groups/cyaolai/JasperChen/Software/Cache_jax
+  jax_enable_compilation_cache: true
+  jax_explain_cache_misses: false
+  jax_persistent_cache_min_compile_time_secs: 0
+  jax_persistent_cache_min_entry_size_bytes: -1
+  jax_persistent_cache_enable_xla_caches: xla_gpu_per_fusion_autotune_cache_dir
+  jax_compilation_cache_include_metadata_in_key: false
+
+data:
+  source: ../synthetic_data/flatbed_data_xpinns_regression_test.mat
+  interface_collocation:
+    library_size: 600
+    sample_count: 600
+  sampling_counts:
+    velocity_data: [1028, 1028]
+    thickness_data: [1028, 1028]
+    # Current samplers use the same sampled coordinates for h and s data.
+    surface_data: [1028, 1028]
+    collocation: [2056, 2056]
+    calving_front: [500, 500]
+    matching: 500
+
+model:
+  workflow: xpinn
+  regions:
+    - index: 0
+      kind: grounded
+    - index: 1
+      kind: floating
+  network:
+    depth: 6
+    width: 30
+
+equation:
+  name: ssa_iso
+
+loss:
+  name: joint_inversion
+  matching: true
+  calving_front: true
+  use_gpinn: false
+  active_regions: [0, 1]
+
+training:
+  seed: 8132002
+  global_weights:
+    data: 1.0
+    equation: 0.01
+    calving_front: 0.05
+    matching: 1.0
+    gpinn: 0.0
+    mu_gradient: 0.0
+  stages:
+    - optimizer:
+        name: kfac
+        learning_rate: null
+        damping: .nan
+        parameters:
+          preset: xpinn_joint_inversion_reference
+          log_rate: 200
+          interface_points: all
+          active_regions: [0, 1]
+      iterations: 100000
+      adaptive_sampling: false
+
+artifacts:
+  output_dir: ../../tests/figures/joint_inversion_kfac_col2056_100k_gpu

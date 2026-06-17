@@ -1,9 +1,17 @@
 from pathlib import Path
 import argparse
 import json
-import os
+import importlib.util
 
 import numpy as np
+
+
+def _runtime_env_helper():
+    helper_path = Path(__file__).resolve().parents[1] / "diffice_jax" / "workflow" / "runtime_env.py"
+    spec = importlib.util.spec_from_file_location("_diffice_runtime_env", helper_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def _preload_runtime(path):
@@ -18,10 +26,9 @@ def _preload_runtime(path):
     else:
         return
     runtime = raw.get("runtime", {})
-    jax_platform = runtime.get("jax_platform")
-    if jax_platform:
-        os.environ.setdefault("JAX_PLATFORMS", str(jax_platform))
-        os.environ.setdefault("JAX_PLATFORM_NAME", str(jax_platform))
+    helper = _runtime_env_helper()
+    env = helper.apply_runtime_env(runtime, emit=False)
+    print(f"JAX_CACHE_CONFIG={json.dumps(env, sort_keys=True)}", flush=True)
 
 
 def _count_points(value, n_regions):

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -22,6 +21,7 @@ from diffice_jax.core.solver import (
 )
 from diffice_jax.data.xpinns import sampling as xpinn_sampling
 from diffice_jax.workflow.config import WorkflowConfig
+from diffice_jax.workflow.runtime_env import apply_runtime_env
 
 
 @dataclass(frozen=True)
@@ -66,10 +66,7 @@ def run_training_workflow(config: WorkflowConfig, save: bool = True) -> Workflow
 
 
 def _apply_runtime_config(runtime: dict[str, Any]) -> None:
-    jax_platform = runtime.get("jax_platform")
-    if jax_platform:
-        os.environ.setdefault("JAX_PLATFORMS", str(jax_platform))
-        os.environ.setdefault("JAX_PLATFORM_NAME", str(jax_platform))
+    apply_runtime_env(runtime)
 
 
 def _apply_legacy_config(legacy: dict[str, Any]) -> None:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import pickle
 import time
 from dataclasses import dataclass, field
@@ -115,6 +116,92 @@ def attach_xpinn_loss_weights(
     batch["eqn_region_weights"] = eqn_region_weights(step, idxgall, regions=eqn_weight_regions)
     batch["active_regions"] = list(active_regions)
     return batch
+
+
+def _batch_leaf_signature(value):
+    if isinstance(value, dict):
+        return {
+            "type": "dict",
+            "items": [(str(key), _batch_leaf_signature(value[key])) for key in sorted(value, key=str)],
+        }
+    if isinstance(value, list):
+        return {"type": "list", "items": [_batch_leaf_signature(item) for item in value]}
+    if isinstance(value, tuple):
+        return {"type": "tuple", "items": [_batch_leaf_signature(item) for item in value]}
+    if value is None:
+        return {"type": "none"}
+    shape = getattr(value, "shape", None)
+    dtype = getattr(value, "dtype", None)
+    if shape is None or dtype is None:
+        arr = np.asarray(value)
+        shape = arr.shape
+        dtype = arr.dtype
+    return {
+        "type": "leaf",
+        "shape": [int(dim) for dim in shape],
+        "dtype": str(np.dtype(dtype)),
+    }
+
+
+def _check_batch_leaf_signature(expected, batch, context):
+    actual = _batch_leaf_signature(batch)
+    if actual != expected:
+        raise ValueError(
+            f"KFAC batch structure changed before optim.step during {context}. "
+            "This would create a new compiled variant. Expected "
+            f"{json.dumps(expected, sort_keys=True)} but got {json.dumps(actual, sort_keys=True)}."
+        )
+    return actual
+
+
+def _json_ready(value):
+    if isinstance(value, Path):
+        return "<path>"
+    if isinstance(value, dict):
+        return {str(key): _json_ready(value[key]) for key in sorted(value, key=str)}
+    if isinstance(value, (list, tuple)):
+        return [_json_ready(item) for item in value]
+    if isinstance(value, (np.bool_, bool)):
+        return bool(value)
+    if isinstance(value, (np.integer, int)):
+        return int(value)
+    if isinstance(value, (np.floating, float)):
+        value = float(value)
+        if np.isnan(value):
+            return "nan"
+        if np.isposinf(value):
+            return "inf"
+        if np.isneginf(value):
+            return "-inf"
+        return value
+    if hasattr(value, "shape") and hasattr(value, "dtype"):
+        arr = np.asarray(value)
+        if arr.shape == ():
+            return _json_ready(arr.item())
+        return {"shape": [int(dim) for dim in arr.shape], "dtype": str(arr.dtype)}
+    if callable(value):
+        return getattr(value, "__name__", type(value).__name__)
+    return value
+
+
+def _jax_cache_env_signature():
+    keys = (
+        "JAX_PLATFORMS",
+        "JAX_PLATFORM_NAME",
+        "JAX_COMPILATION_CACHE_DIR",
+        "JAX_ENABLE_COMPILATION_CACHE",
+        "JAX_EXPLAIN_CACHE_MISSES",
+        "JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS",
+        "JAX_PERSISTENT_CACHE_MIN_ENTRY_SIZE_BYTES",
+        "JAX_PERSISTENT_CACHE_ENABLE_XLA_CACHES",
+        "JAX_COMPILATION_CACHE_INCLUDE_METADATA_IN_KEY",
+        "JAX_ENABLE_X64",
+    )
+    env = {}
+    for key in keys:
+        if key in os.environ:
+            env[key] = "<set>" if key.endswith("_DIR") else os.environ[key]
+    return env
 
 
 @dataclass(frozen=True)
@@ -831,11 +918,52 @@ class DIFFICESolver:
             )
 
         def format_seconds(seconds):
-            return f"{float(seconds):.1f}s"
+            seconds = float(seconds)
+            return "nan" if not np.isfinite(seconds) else f"{seconds:.1f}s"
 
-        optim = KfacOptimizer(loss_fn=kfac_lossf, **config).get_optimizer()
+        def format_scientific(value):
+            return f"{float(np.asarray(value)):.3e}"
+
+        def print_rad_diagnostics(step, diagnostics):
+            if diagnostics is None:
+                return
+            for item in diagnostics:
+                print(
+                    f"KFAC step {step} | rad_precision | "
+                    f"region={int(item['region'])} | "
+                    f"eps={format_scientific(item['eps'])} | "
+                    f"res_min={format_scientific(item['res_min'])} | "
+                    f"p(res_min)={format_scientific(item['prob_at_res_min'])} | "
+                    f"res_max={format_scientific(item['res_max'])} | "
+                    f"p(res_max)={format_scientific(item['prob_at_res_max'])} | "
+                    f"res_min/(eps*res_max)={format_scientific(item['res_min_roundoff_ratio'])} | "
+                    f"prob_min={format_scientific(item['prob_min'])} | "
+                    f"prob_max={format_scientific(item['prob_max'])} | "
+                    f"(prob_max-prob_min)/(eps*prob_max)={format_scientific(item['prob_span_roundoff_ratio'])}",
+                    flush=True,
+                )
+
         key, init_key = random.split(key)
         init_data = sampled_batch(init_key, 0)
+        batch_signature = _batch_leaf_signature(init_data)
+        print(
+            "KFAC_COMPILE_SIGNATURE="
+            + json.dumps(
+                self._kfac_compile_signature(
+                    batch_signature,
+                    config,
+                    stage,
+                    use_gpinn=use_gpinn,
+                    active_regions=active_regions,
+                    eqn_weight_regions=eqn_weight_regions,
+                    idxgall=idxgall,
+                    n_regions=n_regions,
+                ),
+                sort_keys=True,
+            ),
+            flush=True,
+        )
+        optim = KfacOptimizer(loss_fn=kfac_lossf, **config).get_optimizer()
         opt_state = optim.init(params, init_key, init_data)
         initial_objective = float(objective_value(params, init_data))
         history = [(0, initial_objective)]
@@ -883,6 +1011,7 @@ class DIFFICESolver:
                     and (step + 1) > adaptive_sampling_burn_in
                 )
                 if run_rad:
+                    batch_context = f"RAD step {step + 1}"
                     rad_start = time.perf_counter()
                     print(
                         f"KFAC step {step + 1} | adaptive_sampling=start | "
@@ -895,6 +1024,7 @@ class DIFFICESolver:
                         eval_adaptive=True,
                         eval_f=None if eval_f is None else lambda x, idx, basal: eval_f(params, x, idx, basal),
                     )
+                    print_rad_diagnostics(step + 1, batch.pop("rad_diagnostics", None))
                     x_col_mem = batch["col"][0]
                     adapted = True
                     print(
@@ -903,6 +1033,7 @@ class DIFFICESolver:
                         flush=True,
                     )
                 elif adaptive_sampling and adapted:
+                    batch_context = f"reused adaptive step {step + 1}"
                     batch = sampled_batch(data_key, step, eval_adaptive=False)
                     batch = replace_xpinn_collocation(
                         batch,
@@ -912,7 +1043,9 @@ class DIFFICESolver:
                         interface_collocation=interface_collocation,
                     )
                 else:
+                    batch_context = f"sampled step {step + 1}"
                     batch = sampled_batch(data_key, step)
+                _check_batch_leaf_signature(batch_signature, batch, batch_context)
                 step_kwargs = dict(batch=batch, global_step_int=step)
                 if use_step_damping:
                     step_kwargs["damping"] = damping
@@ -922,7 +1055,7 @@ class DIFFICESolver:
                     timed_start_step = step + 1
                 if use_step_damping and damping > damping_min:
                     damping *= damping_decay
-                if (step + 1) % log_rate == 0 or step == 0 or step + 1 == segment_end:
+                if step < 2 or (step + 1) % log_rate == 0 or step + 1 == segment_end:
                     current_objective = float(objective_value(params, batch))
                     history.append((step + 1, current_objective))
                     loss_info = stats["aux"]
@@ -930,6 +1063,7 @@ class DIFFICESolver:
                     timed_elapsed = 0.0 if timed_start is None else time.perf_counter() - timed_start
                     timed_iterations = 0 if timed_start_step is None else step + 1 - timed_start_step
                     seconds_per_iter = timed_elapsed / timed_iterations if timed_iterations else np.nan
+                    seconds_per_iter_label = "warming_up" if timed_iterations == 0 else format_seconds(seconds_per_iter)
                     print(
                         f"KFAC step {step + 1} | "
                         f"objective={current_objective:.4e} | "
@@ -938,7 +1072,7 @@ class DIFFICESolver:
                         f"elapsed={format_seconds(total_elapsed)} | "
                         f"timed_elapsed={format_seconds(timed_elapsed)} | "
                         f"timed_iterations={timed_iterations} | "
-                        f"seconds_per_iter={format_seconds(seconds_per_iter)}",
+                        f"seconds_per_iter={seconds_per_iter_label}",
                         flush=True,
                     )
 
@@ -995,6 +1129,63 @@ class DIFFICESolver:
             interface_point_counts=interface_point_counts,
         )
         return params, history
+
+    def _kfac_compile_signature(
+        self,
+        batch_signature,
+        config,
+        stage,
+        *,
+        use_gpinn,
+        active_regions,
+        eqn_weight_regions,
+        idxgall,
+        n_regions,
+    ):
+        net = self.model_config.network
+        regions = sorted(self.model_config.regions, key=lambda region: region.index)
+        damping_mode = "adaptive" if bool(jnp.isnan(jnp.asarray(config["damping"]))) else "fixed"
+        return {
+            "model": {
+                "workflow": self.model_config.workflow,
+                "network": {
+                    "depth": int(net.depth),
+                    "width": int(net.width),
+                    "activation": int(net.activation),
+                    "first_layer_scale": float(net.first_layer_scale),
+                    "embedding": bool(net.embedding),
+                    "embed_n": int(net.embed_n),
+                    "embed_std": float(net.embed_std),
+                },
+                "per_region_networks": _json_ready(self.model_config.per_region_networks),
+                "per_region_embeddings": _json_ready(self.model_config.per_region_embeddings),
+                "anisotropic": bool(self.model_config.anisotropic),
+                "regions": [
+                    {"index": int(region.index), "kind": region.region_kind}
+                    for region in regions
+                ],
+                "n_regions": int(n_regions),
+            },
+            "loss": {
+                "name": self.loss_config.name,
+                "matching": bool(self.loss_config.matching),
+                "calving_front": bool(self.loss_config.calving_front),
+                "use_gpinn": bool(use_gpinn),
+                "active_regions": _json_ready(active_regions),
+                "eqn_weight_regions": _json_ready(eqn_weight_regions),
+                "idxgall": _json_ready(idxgall),
+                "global_weights": _json_ready(self.loss_config.global_weights),
+            },
+            "training": {
+                "adaptive_sampling": bool(stage.adaptive_sampling),
+                "adaptive_sampling_burn_in": int(stage.adaptive_sampling_burn_in),
+                "adaptive_sampling_period": int(stage.adaptive_sampling_period),
+                "damping_mode": damping_mode,
+            },
+            "kfac_config": _json_ready(config),
+            "batch_shape_signature": batch_signature,
+            "jax_cache_env": _jax_cache_env_signature(),
+        }
 
     def _effective_gpinn_enabled(self):
         if not self.loss_config.use_gpinn:

@@ -22,7 +22,7 @@ class DataSample(NamedTuple):
     Mu_smp: ArrayLike 
     C_smp: ArrayLike
     
-def eval_RAD_probs(X_col_all, idxgall, basal_mask, eval_f):
+def eval_RAD_probs(X_col_all, idxgall, basal_mask, eval_f, return_diagnostics=False):
     # RAD pdf with k=2 and c=1 (see Wu et al. 2023)
     def compute_pdf(err_item):
         err_sq = jnp.sum(jnp.square(err_item), axis=1)
@@ -32,6 +32,34 @@ def eval_RAD_probs(X_col_all, idxgall, basal_mask, eval_f):
         p = jnp.where(jnp.isfinite(p), p, 1.0)
         p_sum = jnp.sum(p)
         return jnp.where(p_sum > 0.0, p / p_sum, jnp.ones_like(p) / p.shape[0])
+
+    def compute_diagnostic(err_item, probs_item, region_idx):
+        err_sq = jnp.sum(jnp.square(err_item), axis=1)
+        err_sq = jnp.where(jnp.isfinite(err_sq), err_sq, 0.0)
+        err_norm = jnp.sqrt(err_sq)
+        idx_min_res = jnp.argmin(err_norm)
+        idx_max_res = jnp.argmax(err_norm)
+        idx_min_prob = jnp.argmin(probs_item)
+        idx_max_prob = jnp.argmax(probs_item)
+        res_min = err_norm[idx_min_res]
+        res_max = err_norm[idx_max_res]
+        prob_min = probs_item[idx_min_prob]
+        prob_max = probs_item[idx_max_prob]
+        eps = jnp.asarray(jnp.finfo(err_norm.dtype).eps, dtype=err_norm.dtype)
+        res_roundoff = eps * jnp.maximum(res_max, eps)
+        prob_roundoff = eps * jnp.maximum(prob_max, eps)
+        return {
+            "region": int(region_idx),
+            "eps": eps,
+            "res_min": res_min,
+            "res_max": res_max,
+            "prob_at_res_min": probs_item[idx_min_res],
+            "prob_at_res_max": probs_item[idx_max_res],
+            "res_min_roundoff_ratio": res_min / res_roundoff,
+            "prob_min": prob_min,
+            "prob_max": prob_max,
+            "prob_span_roundoff_ratio": (prob_max - prob_min) / prob_roundoff,
+        }
 
     def normalized_eqn_err(x_col, idx, basal):
         eqn_out = eval_f(x_col, idx, basal)
@@ -55,6 +83,12 @@ def eval_RAD_probs(X_col_all, idxgall, basal_mask, eval_f):
         for pos, idx in enumerate(idxgall)
     ]
     probs = [compute_pdf(err_item) for err_item in eqn_err]
+    if return_diagnostics:
+        diagnostics = [
+            compute_diagnostic(err_item, probs_item, idx)
+            for err_item, probs_item, idx in zip(eqn_err, probs, idxgall)
+        ]
+        return probs, diagnostics
     return probs
 
 def nearest_interface_collocation_library(X_col, X_if):
@@ -217,7 +251,12 @@ def data_sample_create(data_all, idxgall:ArrayLike, n_pt: ArrayLike, basal_mask=
             C_smp  = tree_map(lambda x, y: U_star[x][4][y], idxgall, idx_smp)
 
         # Sample collocation points, potentially based on equation residuals
-        probs = eval_RAD_probs(X_col_all, idxgall, basal_mask, eval_f) if eval_adaptive else None
+        rad_diagnostics = None
+        if eval_adaptive:
+            probs, rad_diagnostics = eval_RAD_probs(
+                X_col_all, idxgall, basal_mask, eval_f, return_diagnostics=True)
+        else:
+            probs = None
         idx_col = [
             random.choice(
                 keys[ng + pos],
@@ -259,6 +298,8 @@ def data_sample_create(data_all, idxgall:ArrayLike, n_pt: ArrayLike, basal_mask=
             sample = DataSample(X_smp, U_smp, Xh_smp, H_smp, S_smp, [], [])
             
         data = dict(smp=sample, col=[X_col],  bd=[X_bd, nn_bd], md=[X_mbd])
+        if rad_diagnostics is not None:
+            data["rad_diagnostics"] = rad_diagnostics
         
         return data
     
@@ -329,7 +370,12 @@ def data_regression_sample_create(data_all, idxgall:ArrayLike, n_pt: ArrayLike, 
         
         sample = DataSample(X_smp, U_smp, Xh_smp, H_smp, S_smp, Mu_smp, C_smp)
         
-        probs = eval_RAD_probs(X_col_all, idxgall, basal_mask, eval_f) if eval_adaptive else None
+        rad_diagnostics = None
+        if eval_adaptive:
+            probs, rad_diagnostics = eval_RAD_probs(
+                X_col_all, idxgall, basal_mask, eval_f, return_diagnostics=True)
+        else:
+            probs = None
         idx_col = [
             random.choice(
                 keys[ng + pos],
@@ -357,6 +403,8 @@ def data_regression_sample_create(data_all, idxgall:ArrayLike, n_pt: ArrayLike, 
         # jdb.print('X_md shape = {s}', s=X_md_smp[0].shape)
             
         data = dict(smp=sample, ct=[X_ct, nnct], col=[X_col_smp], md=[X_md_smp])
+        if rad_diagnostics is not None:
+            data["rad_diagnostics"] = rad_diagnostics
         
         return data
     

@@ -5,22 +5,21 @@
 ### Problem Formulation 
 The Shelfy-Stream/Shallow-Shelf Approximation (SSA) to the Stokes equations are appropriate for fast flowing ice streams in Antarctica and are given by
 
-$$
-g_1=[2\mu h(2u_x + v_y)]_x + [\mu h(u_y + v_x)]_y - \tau_{bx} - \rho g h s_x \\
-g_2=[2\mu h(u_x + 2v_y)]_y + [\mu h(u_y + v_x)]_x - \tau_{by} - \rho g h s_y 
-$$
+$$ g_1=[2\mu h(2u_x + v_y)]_x + [\mu h(u_y + v_x)]_y - \tau_{bx} - \rho g h s_x $$
+$$ g_2=[2\mu h(u_x + 2v_y)]_y + [\mu h(u_y + v_x)]_x - \tau_{by} - \rho g h s_y $$
+
 For simplicity, we can write $\tau_{bx}=Cu$ and $\tau_{by}=Cv$. For floating ice shelves, the analogous equations are given by 
-$$
-f_1 = [2\mu h(2u_x + v_y)]_x + [\mu h(u_y + v_x)]_y - \rho g h(1-\rho_i/\rho)h_x \\
-f_2 = [2\mu h(u_x + 2v_y)]_y + [\mu h(u_y + v_x)]_x - \rho g h(1-\rho_i/\rho)h_y   
-$$
+
+$$f_1 = [2\mu h(2u_x + v_y)]_x + [\mu h(u_y + v_x)]_y - \rho g h(1-\rho_i/\rho)h_x$$
+$$f_2 = [2\mu h(u_x + 2v_y)]_y + [\mu h(u_y + v_x)]_x - \rho g h(1-\rho_i/\rho)h_y$$
+
 where subscripts denote derivatives, $u,v$ are the horizontal velocities, $h$ the thickness, $s$ the surface elevation, $\rho$ the density of glacial ice, $\mu$ its viscoisty, and $\tau_{bx}, \tau_{by}$ are the basal tractions. Note that these floating equations assume a constant density profile along depth. An improved model using a more realistic, depth-varying depth is under development.
 
 Now suppose that $q^\theta$ denotes a field parametrized by neural networks with parameters $\theta$. The joint inversion problem may be formalized as 
-$$
-\theta = \argmin_{\tilde\theta} \sum_{i=1}^{N_{uv}}{[(u_i^\theta-u_i^{obs})^2 + (v_i^\theta - v_i^{obs})^2]} + \sum_{i=1}^{N_h}{(h_i^\theta-h_i^{obs})^2} \\+ \sum_{i=1}^{N_s}{(s_i^\theta-s_i^{obs})^2} + \sum_{i=1}^{N_{col}} [(f_{1i}^\theta)^2 + (f^\theta_{2i})^2 + (g^\theta_{1i})^2 + (g^\theta_{2i})^2] \\ + \sum_{i=1}^{N_{g}}\text{Match}_i + \sum_{i=1}^{N_{c}}\text{BoundaryCondition}_i
-$$
-where $\text{Match}$ requires continuity of the fields, their derivatives, and/or their second derivatives at the junction between the ice sheet and the ice shelf (grounding line), and $\text{BoundaryCondition}_i$ is the pressure balance condition evaluated at the ice-shelf-ocean terminus.  Given observations $\{u_i^{obs}\}_{i=1:N_{uv}}$, $\{v_i^{obs}\}_{i=1:N_{uv}}$, $\{h_i^{obs}\}_{i=1:N_{h}}$, $\{s_i^{obs}\}_{i=1:N_{s}}$, we may solve the inverse problem for $\mu^\theta(x,y)$ and $C^\theta (x,y)$. This approach of training neural networks for different regions and stitching them together is a domain decomposition method referred to as extended PINNs (X-PINNs).
+
+$$ \theta = \text{argmin}_{\tilde\theta} \bigg[\sum_{i=1}^{N_{uv}}{[(u_i^\theta-u_i^{obs})^2 + (v_i^\theta - v_i^{obs})^2]} + \sum_{i=1}^{N_h}{(h_i^\theta-h_i^{obs})^2} + \sum_{i=1}^{N_s}{(s_i^\theta-s_i^{obs})^2} + \sum_{i=1}^{N_{col}} [(f_{1i}^\theta)^2 + (f^\theta_{2i})^2 + (g^\theta_{1i})^2 + (g^\theta_{2i})^2] + \sum_{i=1}^{N_{g}}\text{Match}_i + \sum_{i=1}^{N_{c}}\text{BoundaryCondition}_i\bigg] $$
+
+where $\text{Match}$ requires continuity of the fields, their derivatives, and/or their second derivatives at the junction between the ice sheet and the ice shelf (grounding line), and $\text{BoundaryCondition}$ is the pressure balance condition evaluated at the ice-shelf-ocean terminus.  Given observations (superscript "obs"), we may solve the inverse problem for $\mu^\theta(x,y)$ and $C^\theta (x,y)$. This approach of training neural networks for different regions and stitching them together is a domain decomposition method referred to as extended PINNs (X-PINNs).
 
 ### Proof of Concept  
 <small>*Ice stream coupled with ice shelf, gPINN-regularized K-FAC optimization for 100,000 iterations*</small>
@@ -48,8 +47,10 @@ The caveat here is that a power-law friction parametrization was used to generat
 
 # Governing Equations Incorporating Depth-Dependent Density 
 The equations for floating ice above assume that ice shelves have density $\rho$ throughout its depth but this is not true. The next level of complexity uses a compaction model (Cuffey and Patterson, 2010)
+
 $$ \rho(z) = \rho_i - (\rho_i - \rho_s) e^{-k(s-z)}$$
-so that $\rho(z=s)=\rho_s$ at the surface and $\rho(z=b)\approx\rho_i$ at the base of the ice shelf. $\rho_i=917$ kg/m^3 and $\rho_s=400$ kg/m^3 are densities of glacial ice and uncompacted snow, respectively. The incorporation of this density model into the governing equations ($f_1$, $f_2$) is subject of ongoing work.
+
+so that $\rho(z=s)=\rho_s$ at the surface and $\rho(z=b)\approx\rho_i$ at the base of the ice shelf. $\rho_i=917$ kg/m^3 and $\rho_s=400$ kg/m^3 are densities of glacial ice and uncompacted snow, respectively. The $k$ is the unknown compaction rate that needs to be calibrated from surface elevation data. The incorporation of this density model into the governing equations ($f_1$, $f_2$) is subject of ongoing work.
 
 # Config-driven inversion workflow
 

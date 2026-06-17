@@ -17,17 +17,17 @@ from scipy.io import loadmat
 from scipy.interpolate import griddata
 from scipy.spatial import cKDTree
 
-from .data.xpinns.preprocessing import normalize_data as normdata_xpinn
-from .data.xpinns.sampling import data_sample_create as dsample_xpinn
-from .equation.eqn_iso import front_eqn as dbc_iso
-from .equation.eqn_iso import gov_eqn as ssa_iso
-from .model.architecture import pirate_last_layer_least_squares, resolve_architecture
-from .model.xpinns.initialization import init_nets as init_xpinn
-from .model.xpinns.loss import loss_iso_create as loss_iso_xpinn
-from .model.xpinns.networks import solu_create as solu_xpinn
-from .model.xpinns.prediction import predict as predict_xpinn
-from .optimizer.optimization import adam_optimizer as adam_opt
-from .optimizer.optimization import lbfgs_optimizer as lbfgs_opt
+from ..data.xpinns.preprocessing import normalize_data as normdata_xpinn
+from ..data.xpinns.sampling import data_sample_create as dsample_xpinn
+from ..equation.eqn_iso import front_eqn as dbc_iso
+from ..equation.eqn_iso import gov_eqn as ssa_iso
+from ..model.architecture import pirate_last_layer_least_squares, resolve_architecture
+from ..model.xpinns.initialization import init_nets as init_xpinn
+from ..model.xpinns.loss import loss_iso_create as loss_iso_xpinn
+from ..model.xpinns.networks import solu_create as solu_xpinn
+from ..model.xpinns.prediction import predict as predict_xpinn
+from ..optimizer.optimization import adam_optimizer as adam_opt
+from ..optimizer.optimization import lbfgs_optimizer as lbfgs_opt
 from .save_load import save_model
 from .config import ensure_canonical_scale
 

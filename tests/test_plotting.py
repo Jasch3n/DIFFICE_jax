@@ -7,7 +7,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pytest
 
-_PLOTTING_PATH = Path(__file__).resolve().parents[1] / "diffice_jax" / "plotting.py"
+_PLOTTING_PATH = Path(__file__).resolve().parents[1] / "diffice_jax" / "visualization" / "plotting.py"
 _SPEC = importlib.util.spec_from_file_location("diffice_jax_plotting", _PLOTTING_PATH)
 _PLOTTING = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(_PLOTTING)

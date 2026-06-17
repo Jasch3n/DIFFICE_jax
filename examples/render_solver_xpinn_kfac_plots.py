@@ -14,7 +14,7 @@ import matplotlib
 import numpy as np
 
 import diffice_jax as djax
-from diffice_jax.plotting import tripcolor_scattered
+from diffice_jax.visualization import tripcolor_scattered
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt

@@ -1,7 +1,7 @@
 import pickle
-from .model.pinns.networks import solu_create as solu_pinn
-from .model.xpinns.networks import solu_create as solu_xpinn
-from .model.architecture import resolve_architecture
+from ..model.pinns.networks import solu_create as solu_pinn
+from ..model.xpinns.networks import solu_create as solu_xpinn
+from ..model.architecture import resolve_architecture
 
 def save_model(filepath, params, model_type="xpinn", **config):
     """

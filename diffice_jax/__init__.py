@@ -20,7 +20,7 @@ from .data.xpinns.preprocessing import normalize_data as normdata_xpinn
 from .data.pinns.sampling import data_sample_create as dsample_pinn
 from .data.xpinns.sampling import data_sample_create as dsample_xpinn
 from .data.xpinns.sampling import data_regression_sample_create as dsample_regression_xpinn
-from .plotting import tripcolor_scattered
+from .visualization import tripcolor_scattered
 
 from .equation.eqn_iso import gov_eqn as ssa_iso
 from .equation.eqn_iso import front_eqn as dbc_iso

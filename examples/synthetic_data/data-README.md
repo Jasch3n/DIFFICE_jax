@@ -47,5 +47,8 @@ Each `*.mat` file includes synthetic simulations of ice-stream-ice-shelf systems
 - `alpha2d` and `mud`: The values of $\alpha^2$ (*not* $\beta^2$ per the notation above) and $\mu$ corresponding to entries in `xd` and `yd`
 - `basal_mask`: boolean variable indicating whether the region is grounded (`True`) or not (`False`). 
 - `hd` and `sd`: The thickness and surface elevation at FEM vertices corresponding to entries in `xd_h` and `yd_h`. In applicable cases, tje `hd` field contains artificially sparse measurements to emulate radar survey tracks, and the full set of dense measurement can be found in `h_dense`.
+- `ols_d` contains the "ocean level-set" variable from ISSM. Positive `ols_d` means that the corresponding point is grounded. Negative means that it is floating. Zero means that the point is on the grounding line.
+
+The other variables are not too relevant for the purposes here. 
 
 The nomenclature here mostly follows the DIFFICE_jax code developed by our group.

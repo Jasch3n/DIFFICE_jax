@@ -4,7 +4,6 @@ import json
 import os
 import pickle
 import time
-import warnings
 
 os.environ.setdefault("JAX_PLATFORMS", "cpu")
 os.environ.setdefault("JAX_PLATFORM_NAME", "cpu")
@@ -15,6 +14,7 @@ import matplotlib
 import numpy as np
 
 import diffice_jax as djax
+from diffice_jax.plotting import tripcolor_scattered
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -126,17 +126,17 @@ def _tripcolor_regions(ax, regions, key, title, cmap, vmin, vmax):
             continue
         xy = np.column_stack([np.asarray(region["x"])[mask], np.asarray(region["y"])[mask]])
         _, keep = np.unique(xy, axis=0, return_index=True)
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", message="invalid value encountered in cast", category=RuntimeWarning)
-            image = ax.tripcolor(
-                xy[keep, 0] / 1e3,
-                xy[keep, 1] / 1e3,
-                values[mask][keep],
-                shading="flat",
-                cmap=cmap,
-                vmin=vmin,
-                vmax=vmax,
-            )
+        image = tripcolor_scattered(
+            xy[keep, 0],
+            xy[keep, 1],
+            values[mask][keep],
+            ax=ax,
+            coordinate_scale=1e-3,
+            shading="flat",
+            cmap=cmap,
+            vmin=vmin,
+            vmax=vmax,
+        )
     ax.set_title(title)
     ax.set_xlabel("x [km]")
     ax.set_ylabel("y [km]")

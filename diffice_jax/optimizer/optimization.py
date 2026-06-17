@@ -18,7 +18,15 @@ _REQUESTED_JAX_PLATFORMS = tuple(
     if platform.strip()
 )
 _IS_METAL_BACKEND = 'metal' in _REQUESTED_JAX_PLATFORMS
+
+# TensorFlow Probability versions used by kfac_jax may still reference this
+# pre-0.7 JAX location. Patch it before any optional kfac_jax imports.
+import jax.core
+if not hasattr(jax.interpreters.xla, 'pytype_aval_mappings'):
+    jax.interpreters.xla.pytype_aval_mappings = jax.core.pytype_aval_mappings
+
 _HAS_KFAC = False
+_KFAC_IMPORT_ERROR = None
 if not _IS_METAL_BACKEND:
     try:
         from kfac_jax import curvature_estimator
@@ -26,13 +34,9 @@ if not _IS_METAL_BACKEND:
         from kfac_jax import loss_functions as kfac_loss_functions
         from kfac_jax import optimizer as kfac_optim
         _HAS_KFAC = True
-    except ModuleNotFoundError:
+    except Exception as exc:
         _HAS_KFAC = False
-
-# [FIXME]: There is a version mismatch where jax.interpreters.xla.pytype_aval_mappings has been deprecated. 
-import jax.core
-if not hasattr(jax.interpreters.xla, 'pytype_aval_mappings'):
-    jax.interpreters.xla.pytype_aval_mappings = jax.core.pytype_aval_mappings
+        _KFAC_IMPORT_ERROR = exc
 
 from tensorflow_probability.substrates import jax as tfp
 import functools
@@ -293,7 +297,10 @@ class KfacOptimizer():
     if _IS_METAL_BACKEND:
       raise RuntimeError("KfacOptimizer is unavailable on the JAX Metal backend.")
     if not _HAS_KFAC:
-      raise RuntimeError("KfacOptimizer requires the optional kfac_jax package.")
+      message = "KfacOptimizer requires a working optional kfac_jax installation."
+      if _KFAC_IMPORT_ERROR is not None:
+        message = f"{message} Import failed with: {_KFAC_IMPORT_ERROR}"
+      raise RuntimeError(message)
 
     # loss_fn = functools.partial(
     #     loss_fn,

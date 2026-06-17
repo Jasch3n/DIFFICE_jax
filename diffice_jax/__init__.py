@@ -20,6 +20,7 @@ from .data.xpinns.preprocessing import normalize_data as normdata_xpinn
 from .data.pinns.sampling import data_sample_create as dsample_pinn
 from .data.xpinns.sampling import data_sample_create as dsample_xpinn
 from .data.xpinns.sampling import data_regression_sample_create as dsample_regression_xpinn
+from .plotting import tripcolor_scattered
 
 from .equation.eqn_iso import gov_eqn as ssa_iso
 from .equation.eqn_iso import front_eqn as dbc_iso
@@ -57,7 +58,7 @@ from .workflow import (
 )
 
 __all__ = ["normdata_pinn", "normdata_xpinn", "dsample_pinn", "dsample_xpinn", 
-           "plot_xpinn_data",
+           "plot_xpinn_data", "tripcolor_scattered",
            "DIFFICESolver", "DataConfig", "EquationConfig", "FieldSchema",
            "LossConfig", "ModelConfig", "NetworkConfig", "OptimizerConfig",
            "RegionConfig", "TrainingConfig", "TrainingStage",

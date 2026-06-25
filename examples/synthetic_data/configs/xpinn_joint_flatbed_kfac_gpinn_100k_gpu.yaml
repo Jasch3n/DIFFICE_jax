@@ -19,7 +19,7 @@ data:
   sampling_counts:
     velocity_data: [1028, 1028]
     thickness_data: [1028, 1028]
-    # Current samplers use the same sampled coordinates for h and s data.
+    # Surface data is sampled independently from thickness data when specified.
     surface_data: [1028, 1028]
     collocation: [1028, 1028]
     calving_front: [500, 500]

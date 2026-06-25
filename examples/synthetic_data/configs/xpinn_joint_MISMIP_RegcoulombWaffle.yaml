@@ -1,22 +1,29 @@
-name: xpinn_joint_flatbed_kfac_gpinn_RAD_100k
+name: xpinn_joint_MISMIP_RegcoulombWaffle
 workflow: joint_inversion
 
 runtime:
-  jax_platform: cpu
+  jax_platform: cuda
+  jax_compilation_cache_dir: /oak/stanford/groups/cyaolai/JasperChen/Software/Cache_jax
+  jax_enable_compilation_cache: true
+  jax_explain_cache_misses: false
+  jax_persistent_cache_min_compile_time_secs: 0
+  jax_persistent_cache_min_entry_size_bytes: -1
+  jax_persistent_cache_enable_xla_caches: xla_gpu_per_fusion_autotune_cache_dir
+  jax_compilation_cache_include_metadata_in_key: false
 
 data:
-  source: ../flatbed_data_xpinns_regression_test.mat
+  source: ../MISMIP_regcoulomb_waffle.mat
   interface_collocation:
-    library_size: 600
-    sample_count: 600
+    library_size: 1500
+    sample_count: 1500
   sampling_counts:
-    velocity_data: [1028, 1028]
+    velocity_data: [2056, 2056]
     thickness_data: [1028, 1028]
     # Surface data is sampled independently from thickness data when specified.
-    surface_data: [1028, 1028]
-    collocation: [1028, 1028]
+    surface_data: [2056, 2056]
+    collocation: [4000, 4000]
     calving_front: [500, 500]
-    matching: 500
+    matching: 700
 
 model:
   workflow: xpinn
@@ -58,10 +65,10 @@ training:
           log_rate: 200
           interface_points: all
           active_regions: [0, 1]
-      iterations: 100000
+      iterations: 50000
       adaptive_sampling: true
       adaptive_sampling_burn_in: 1500
       adaptive_sampling_period: 50
 
 artifacts:
-  output_dir: ../../tests/figures/joint_inversion_kfac_gpinn_RAD_100k
+  output_dir: ../joint_MISMIP_RegcoulombWaffle

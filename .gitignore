@@ -9,6 +9,7 @@ __pycache__/
 .DS_Store
 AGENTS.md
 sync_to_sherlock.sh
+sync_from_sherlock.sh
 
 *.egg-info/
 *.bak

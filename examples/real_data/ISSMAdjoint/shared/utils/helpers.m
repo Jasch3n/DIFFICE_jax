@@ -35,9 +35,6 @@ switch action
     case 'plot_velocity_diagnostics'
         plot_velocity_diagnostics(varargin{:});
         varargout = {};
-    case 'plot_lcurve'
-        plot_lcurve(varargin{:});
-        varargout = {};
     otherwise
         error('Unknown helpers action: %s', action);
 end
@@ -320,30 +317,4 @@ stats_text = sprintf(['RAE stats\n', ...
     'mean   %7.3f\n', ...
     'median %7.3f'], ...
     min(values), max(values), mean(values), median(values));
-end
-
-function plot_lcurve(config, lcurve)
-FONT_SIZE = 28;
-valid = ~[lcurve.failed]' & isfinite([lcurve.Jo]') & ...
-    isfinite([lcurve.R]') & [lcurve.Jo]' > 0 & [lcurve.R]' > 0;
-if ~any(valid)
-    return;
-end
-figure('Visible', 'off');
-loglog([lcurve(valid).Jo], [lcurve(valid).R], '-o', ...
-    'Color', [0.1 0.35 0.75], 'MarkerFaceColor', [0.1 0.35 0.75]);
-hold on;
-selected = [lcurve.selected]';
-if any(selected)
-    loglog([lcurve(selected).Jo], [lcurve(selected).R], 'rp', ...
-        'MarkerSize', 14, 'MarkerFaceColor', 'r');
-end
-set(gca, 'FontSize', FONT_SIZE);
-xlabel('absolute velocity misfit J_o', 'FontSize', FONT_SIZE);
-ylabel('rheology_B regularization R', 'FontSize', FONT_SIZE);
-title('Rheology B L-curve', 'FontWeight', 'bold', 'FontSize', FONT_SIZE);
-grid on;
-axis square;
-exportgraphics(gcf, config.lcurve_plot_path, 'Resolution', 200);
-close(gcf);
 end

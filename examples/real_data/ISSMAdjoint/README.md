@@ -74,10 +74,10 @@ smoke_test
 Ronne-Filchner, and Ross. Set `include_larsend = true` before running it if you
 also want the Larsen D config.
 
-To build an L-curve, create a series of copied config files with different
-`inversion.regularization_weight` values and run `run_inversion.m` once per
-config. The template saves outputs using the config filename stem, so copied
-configs do not overwrite each other.
+To compare regularization weights, create a series of copied config files with
+different `inversion.regularization_weight` values and run `run_inversion.m`
+once per config. The template saves outputs using the config filename stem, so
+copied configs do not overwrite each other.
 
 ## Where the Core Logic Lives
 
@@ -94,12 +94,8 @@ The core rheology-B inversion logic is:
 
 - `shared/inversion/rheology_b_inversion_setup.m` - defines floating-shelf control
   vertices, active velocity-cost vertices, and mode-specific setup
-- `shared/inversion/inversion_options_from_config.m` - maps YAML settings to ISSM
-  inversion options for `lcurve` and `smoke` modes
 - `shared/inversion/run_rheology_single_inversion.m` - one-weight inversion used
   by the intern-facing template
-- `shared/inversion/invert_rheology_b_lcurve_core.m` - legacy/reference
-  L-curve logic
 - `shared/inversion/run_rheology_smoke_inversion.m` - short regression-style
   inversion
 

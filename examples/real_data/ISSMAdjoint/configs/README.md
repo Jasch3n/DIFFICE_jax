@@ -78,9 +78,9 @@ inversion:
   regularization_weight: 1.0e-17
 ```
 
-A future L-curve analysis should sweep over a series of config files, each with
-a different `inversion.regularization_weight`, then compare the saved result
-files.
+To compare regularization weights, sweep over a series of config files, each
+with a different `inversion.regularization_weight`, then compare the saved
+result files.
 
 The smoke inversion can reuse the config's inversion weight:
 

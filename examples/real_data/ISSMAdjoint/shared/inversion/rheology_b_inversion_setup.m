@@ -2,14 +2,13 @@ function setup = rheology_b_inversion_setup(config, md, mode)
 %RHEOLOGY_B_INVERSION_SETUP Resolve masks and options for a rheology-B run.
 %
 % Syntax:
-%   setup = rheology_b_inversion_setup(config, md, 'lcurve');
 %   setup = rheology_b_inversion_setup(config, md, 'smoke');
 %   setup = rheology_b_inversion_setup(config, md, 'diagnostics');
 %
 % Output:
 %   setup.shelf_vertices - floating shelf vertices controlled in B inversion.
 %   setup.valid_velocity - active velocity-cost vertices.
-%   setup.options        - solver options for lcurve/smoke modes.
+%   setup.options        - reserved for mode-specific solver options.
 %
 % Assumptions:
 %   Floating shelf vertices have md.mask.ocean_levelset < 0 and
@@ -17,7 +16,7 @@ function setup = rheology_b_inversion_setup(config, md, mode)
 %   finite observed speed, at least config.min_speed_for_cost, and unconstrained
 %   by stressbalance.spcvx/spcvy.
 
-mode = validatestring(char(mode), {'lcurve', 'smoke', 'diagnostics'});
+mode = validatestring(char(mode), {'smoke', 'diagnostics'});
 
 setup = struct();
 setup.shelf_vertices = md.mask.ocean_levelset < 0 & md.mask.ice_levelset <= 0;
@@ -37,9 +36,5 @@ if ~any(setup.valid_velocity)
         config.shelf_name, mode);
 end
 
-if strcmp(mode, 'diagnostics')
-    setup.options = struct();
-else
-    setup.options = inversion_options_from_config(config, mode);
-end
+setup.options = struct();
 end

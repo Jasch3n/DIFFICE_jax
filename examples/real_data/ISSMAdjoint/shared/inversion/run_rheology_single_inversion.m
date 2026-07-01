@@ -5,9 +5,9 @@ function [md, inversion_result] = run_rheology_single_inversion( ...
 % Syntax:
 %   [md, result] = run_rheology_single_inversion(config, 1e-17, 10, 10);
 %
-% This function intentionally does not perform L-curve analysis. It runs one
-% MaterialsRheologyBbar inversion with one regularization weight and returns
-% the solved model plus objective and velocity diagnostics.
+% This function runs one MaterialsRheologyBbar inversion with one
+% regularization weight and returns the solved model plus objective and
+% velocity diagnostics.
 %
 % Assumptions:
 %   The parameterized model already exists at config.parameterized_path. The

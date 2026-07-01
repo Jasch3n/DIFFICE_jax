@@ -27,8 +27,6 @@ For inversion behavior changes:
 
 - Start in `inversion/rheology_b_inversion_setup.m` for active masks.
 - Use `inversion/run_rheology_single_inversion.m` for the single-weight solve.
-- Treat `inversion/invert_rheology_b_lcurve_core.m` as legacy/reference
-  L-curve logic, not the intern-facing template.
 
 For preprocessing changes:
 

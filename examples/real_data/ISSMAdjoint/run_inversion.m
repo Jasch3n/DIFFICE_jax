@@ -2,9 +2,8 @@
 %
 % Change config_name below for a new experiment. The config file supplies the
 % single inversion.regularization_weight value.
-% This template intentionally does not perform L-curve analysis. If you need
-% an L-curve, write a separate driver that calls the single inversion for each
-% candidate regularization weight and then compares the results.
+% This template runs exactly one inversion weight. For a regularization sweep,
+% run this template once per config file and compare the saved result files.
 
 clear;
 

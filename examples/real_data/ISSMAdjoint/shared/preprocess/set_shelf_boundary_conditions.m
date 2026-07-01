@@ -28,9 +28,10 @@ function [md, iceedge_nodes, grounding_line_nodes, island_boundary_nodes] = ...
 %   masks 1, 2, and 4 are solid boundary constraints.
 %
 % Examples:
-%   cd examples/real_data/ISSMAdjoint/Amery
-%   steps = [1 2 3 4];
-%   Amery_Inversion
+%   config = shelf_config('configs/amery.yaml');
+%   md = loadmodel(config.parameterized_path);
+%   bedmachine_data = struct(...);
+%   md = set_shelf_boundary_conditions(config, md, bedmachine_data);
 
 boundary_nodes = find(md.mesh.vertexonboundary);
 iceedge_nodes = false(md.mesh.numberofvertices, 1);

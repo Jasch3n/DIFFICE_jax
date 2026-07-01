@@ -1,7 +1,7 @@
 % Short ISSM adjoint rheology-B smoke inversion across configured shelves.
 %
 % This script is intended for validating large-scale code changes without
-% running full L-curve inversions. It requires existing
+% running full production inversions. It requires existing
 % Results/<Shelf>_Parameterization.mat files and writes smoke inversion
 % artifacts under each shelf's Results directory.
 %

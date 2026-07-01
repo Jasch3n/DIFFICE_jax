@@ -26,9 +26,9 @@ function [md, bedmachine_data, valid_velocity] = parameterize_from_bedmachine_me
 %   classes and interpolation functions are available.
 %
 % Examples:
-%   cd examples/real_data/ISSMAdjoint/Amery
-%   steps = [1 2 3 4];
-%   Amery_Inversion
+%   config = shelf_config('configs/amery.yaml');
+%   md = loadmodel(config.mesh_path);
+%   md = parameterize_from_bedmachine_measures(config, md);
 
 required = {'shelf_name', 'mesh_domain_file', 'model_dir', ...
     'parameterized_path', 'bedmachine_file', 'measures_file'};

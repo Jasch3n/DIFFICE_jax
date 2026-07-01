@@ -9,7 +9,7 @@ function outputs = run_shelf_inversion_steps(config, steps)
 %   config - struct from shelf_config.
 %   steps  - numeric vector. Step 0 writes the BedMachine outline;
 %       step 1 builds mesh; step 2 parameterizes; step 3 solves initial
-%       stress balance; step 4 runs rheology-B L-curve inversion.
+%       stress balance; step 4 runs one rheology-B inversion.
 %
 % Output:
 %   outputs - struct with fields populated by the requested steps.
@@ -24,9 +24,8 @@ function outputs = run_shelf_inversion_steps(config, steps)
 %   3 floating ice, and 4 Lake Vostok. ISSM is available for steps 1-4.
 %
 % Examples:
-%   cd examples/real_data/ISSMAdjoint/LarsenC
-%   steps = [1 2];
-%   LarsenC_Inversion
+%   config = shelf_config('configs/larsenc.yaml');
+%   outputs = run_shelf_inversion_steps(config, [0 1 2 4]);
 
 if nargin < 2
     steps = [1 2 3 4];
@@ -67,7 +66,9 @@ if any(steps == 3)
 end
 
 if any(steps == 4)
-    [outputs.inversion, outputs.lcurve, outputs.velocity_diagnostics] = ...
-        run_rheology_lcurve_inversion(config);
+    [outputs.inversion, outputs.inversion_result] = ...
+        run_rheology_single_inversion(config, config.regularization_weight, ...
+        config.invert_maxsteps, config.invert_maxiter);
+    save(config.inversion_path, 'outputs', '-v7.3');
 end
 end

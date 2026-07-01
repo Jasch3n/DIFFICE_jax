@@ -21,9 +21,9 @@ function md = build_mesh(config)
 %   as a mesh adaptation field. ISSM must be available through config.issm_dir.
 %
 % Examples:
-%   cd examples/real_data/ISSMAdjoint/LarsenC
-%   steps = [1 2];
-%   LarsenC_Inversion
+%   config = shelf_config('configs/larsenc.yaml');
+%   build_bedmachine_outline(config);
+%   md = build_mesh(config);
 
 required = {'mesh_domain_file', 'geometry_dir', 'model_dir', 'mesh_path', ...
     'issm_dir', 'bedmachine_file', 'measures_file'};

@@ -182,6 +182,8 @@ class DIFFICEInverseProblem:
             "xd_h",
             "yd_h",
             "hd",
+            "xd_s",
+            "yd_s",
             "sd",
             "xct",
             "yct",
@@ -235,6 +237,7 @@ class DIFFICEInverseProblem:
         self.n_pt = [
             jnp.array(sp["velocity"]),
             jnp.array(sp["thickness"]),
+            jnp.array(sp.get("surface", sp["thickness"])),
             jnp.array(sp["collocation"]),
             jnp.array(sp["boundary"]),
             jnp.array(sp["interface"]),
@@ -249,6 +252,9 @@ class DIFFICEInverseProblem:
                 jnp.array([2 * sp["thickness"][0], sp["thickness"][1]])
                 if isinstance(sp["thickness"], list)
                 else jnp.array(2 * sp["thickness"]),
+                jnp.array([2 * sp.get("surface", sp["thickness"])[0], sp.get("surface", sp["thickness"])[1]])
+                if isinstance(sp.get("surface", sp["thickness"]), list)
+                else jnp.array(2 * sp.get("surface", sp["thickness"])),
                 jnp.array([2 * sp["collocation"][0], sp["collocation"][1]])
                 if isinstance(sp["collocation"], list)
                 else jnp.array(2 * sp["collocation"]),
@@ -1037,9 +1043,13 @@ class DIFFICEInverseProblem:
             raise RuntimeError("No rawdata available. Provide `fields` or call prepare()/from_bundle with data snapshot.")
 
         x_vel, y_vel, u, v = self._extract_raw_field_quad("xd", "yd", "ud", "vd", idx)
-        x_h, y_h, h, s = self._extract_raw_field_quad("xd_h", "yd_h", "hd", "sd", idx)
+        x_h, y_h, h, _ = self._extract_raw_field_quad("xd_h", "yd_h", "hd", "hd", idx)
+        x_s_key = "xd_s" if "xd_s" in self.rawdata else "xd_h"
+        y_s_key = "yd_s" if "yd_s" in self.rawdata else "yd_h"
+        x_s, y_s, s, _ = self._extract_raw_field_quad(x_s_key, y_s_key, "sd", "sd", idx)
         x_vel, y_vel, u, v = self._drop_nan_rows(x_vel, y_vel, u, v)
-        x_h, y_h, h, s = self._drop_nan_rows(x_h, y_h, h, s)
+        x_h, y_h, h = self._drop_nan_rows(x_h, y_h, h)
+        x_s, y_s, s = self._drop_nan_rows(x_s, y_s, s)
         out = {
             "x_vel": x_vel,
             "y_vel": y_vel,
@@ -1048,6 +1058,8 @@ class DIFFICEInverseProblem:
             "x_h": x_h,
             "y_h": y_h,
             "h": h,
+            "x_s": x_s,
+            "y_s": y_s,
             "s": s,
         }
 
@@ -1125,6 +1137,9 @@ class DIFFICEInverseProblem:
         if x_h is None or y_h is None:
             x_h, y_h = x_vel, y_vel
         h = self._as_col(fields.get("h"))
+        x_s, y_s = _xy("s", required=False)
+        if x_s is None or y_s is None:
+            x_s, y_s = x_h, y_h
         s = self._as_col(fields.get("s"))
         if h is None or s is None:
             raise ValueError("`fields` must include thickness/surface fields `h` and `s`.")
@@ -1142,7 +1157,8 @@ class DIFFICEInverseProblem:
             c = self._as_col(fields.get("alpha2"))
 
         x_vel, y_vel, u, v = self._drop_nan_rows(x_vel, y_vel, u, v)
-        x_h, y_h, h, s = self._drop_nan_rows(x_h, y_h, h, s)
+        x_h, y_h, h = self._drop_nan_rows(x_h, y_h, h)
+        x_s, y_s, s = self._drop_nan_rows(x_s, y_s, s)
 
         out = {
             "x_vel": x_vel,
@@ -1152,6 +1168,8 @@ class DIFFICEInverseProblem:
             "x_h": x_h,
             "y_h": y_h,
             "h": h,
+            "x_s": x_s,
+            "y_s": y_s,
             "s": s,
             "x_mu": x_mu,
             "y_mu": y_mu,

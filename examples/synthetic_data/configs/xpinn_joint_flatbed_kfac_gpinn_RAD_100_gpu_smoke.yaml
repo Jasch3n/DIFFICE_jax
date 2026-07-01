@@ -3,6 +3,7 @@ workflow: joint_inversion
 
 runtime:
   jax_platform: cuda
+  precision: double
   jax_compilation_cache_dir: /oak/stanford/groups/cyaolai/JasperChen/Software/Cache_jax
   jax_enable_compilation_cache: true
   jax_explain_cache_misses: false
@@ -12,7 +13,7 @@ runtime:
   jax_compilation_cache_include_metadata_in_key: false
 
 data:
-  source: ../synthetic_data/flatbed_data_xpinns_regression_test.mat
+  source: ../flatbed_data_xpinns_regression_test.mat
   interface_collocation:
     library_size: 600
     sample_count: 600

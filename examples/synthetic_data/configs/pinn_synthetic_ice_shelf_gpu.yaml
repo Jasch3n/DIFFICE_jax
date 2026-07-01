@@ -1,0 +1,49 @@
+name: pinn_synthetic_ice_shelf_gpu
+workflow: ice-shelf-only
+
+runtime:
+  jax_platform: gpu
+  precision: double
+
+data:
+  source: ../../../tests/data_pinns_test.mat
+  sampling_counts:
+    velocity_data: 1024
+    thickness_data: 1024
+    # Floating standalone PINN has no independent surface-elevation data term.
+    surface_data: null
+    collocation: 2048
+    calving_front: 256
+  collocation_library_size: full
+
+model:
+  workflow: pinn
+  network:
+    depth: 6
+    width: 30
+    embedding: false
+    embed_n: 10
+    embed_std: 1.0
+
+equation:
+  name: ssa_iso
+
+loss:
+  name: iso
+  weights: [1.0, 0.05, 0.1]
+  calving_front: true
+  use_gpinn: false # [NOTE]: Currently unavailable for pinns
+
+training:
+  seed: 1234
+  stages:
+    - optimizer:
+        name: adam
+        learning_rate: 1.0e-3
+      iterations: 500
+      adaptive_sampling: false
+      adaptive_sampling_burn_in: 1000
+      adaptive_sampling_period: 50
+
+artifacts:
+  output_dir: ../pinn_iceshelf_inversion_gpu/

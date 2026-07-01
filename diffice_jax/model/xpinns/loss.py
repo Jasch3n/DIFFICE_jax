@@ -480,6 +480,9 @@ def _loss_xpinn_create(solNN:Tuple[Callable], idxgall:List[int],
     # eqn_w *= 10.0
     ct_w = jnp.array([1.]) if grounded_only_interface_mu_ct else jnp.array([1., 1.])
     # ct_w *= 10.0
+    # md_w order: u, v, h, s, log(mu), 
+    #             u_x, u_y, v_x, v_y, h_x, h_y, (log(mu))_x, (log(mu))_y, 
+    #             u_xx, 0.5*(u_xy+u_yx), u_yy, v_xx, 0.5*(v_xy+v_yx), v_yy.
     md_w_default = jnp.array([1., 1., 1., 1., 1.,
                               0.6, 0.6, 0.6, 0.6, 0.0, 0.0, 0.6, 0.6,
                               0.0, 0.0, 0.0, 0.0, 0.0, 0.0])

@@ -13,16 +13,16 @@ function outputs = Amery_GL(output_dir)
 %   Amery_GL_preview.png.
 %
 % Assumptions:
-%   The Amery ROI outline is shelf-local and translated to EPSG:3031 by the
-%   configured override [-2.55e6, -2.15e6]. BedMachine mask codes follow v4.
+%   The Amery outline is built directly from BedMachine v4 in EPSG:3031.
 %   ISSM expread/expwrite are available through config.issm_dir.
 
 script_dir = fileparts(mfilename('fullpath'));
 if isempty(script_dir)
     script_dir = pwd;
 end
-addpath(fullfile(fileparts(script_dir), 'shared'));
-config = shelf_config('Amery');
+adjoint_dir = fileparts(script_dir);
+addpath(genpath(fullfile(adjoint_dir, 'shared')));
+config = shelf_config(fullfile(adjoint_dir, 'configs', 'amery.yaml'));
 if nargin >= 1 && ~isempty(output_dir)
     config.geometry_dir = output_dir;
     config.mesh_domain_file = fullfile(output_dir, 'Amery_Outline.exp');

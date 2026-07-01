@@ -2,7 +2,7 @@ function md = build_mesh(config)
 %BUILD_MESH Create and adapt a BAMG mesh for one shelf.
 %
 % Syntax:
-%   config = shelf_config('Amery');
+%   config = shelf_config('configs/amery.yaml');
 %   md = build_mesh(config);
 %
 % Required input:

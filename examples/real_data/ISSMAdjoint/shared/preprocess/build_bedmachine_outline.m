@@ -2,7 +2,7 @@ function outputs = build_bedmachine_outline(config)
 %BUILD_BEDMACHINE_OUTLINE Build the BAMG outline directly from BM4 mask.
 %
 % Syntax:
-%   config = shelf_config('Ross');
+%   config = shelf_config('configs/ross.yaml');
 %   outputs = build_bedmachine_outline(config);
 %
 % Required input:
@@ -24,7 +24,7 @@ function outputs = build_bedmachine_outline(config)
 %   solid means mask 1, 2, or 4. BM2 outlines are not used for transforms.
 %
 % Examples:
-%   config = shelf_config('Ross');
+%   config = shelf_config('configs/ross.yaml');
 %   build_bedmachine_outline(config);
 
 required = {'shelf_name', 'mesh_domain_file', 'gl_preview_file', ...

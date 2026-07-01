@@ -1,0 +1,15 @@
+name: RnFlch
+
+data:
+  bedmachine_file: /Users/jiapchen/Research/Data/BedMachineAntarctica-v4.nc
+  measures_file: /Users/jiapchen/Research/Data/MEaSURES-ice-vel/insar_antarctica_ice_velocity_450m_v2.nc
+  bedmachine_bounds: [-1.56e6, -0.48e6, 0.08e6, 1.10e6]
+  bedmachine_clip: {}
+
+paths:
+  shelf_dir: ../RnFlch
+  geometry_dir: ../RnFlch/Geometry
+  results_dir: ../RnFlch/Results
+
+inversion:
+  regularization_weight: 1e-17

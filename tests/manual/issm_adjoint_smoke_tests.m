@@ -7,16 +7,16 @@
 repo_root = fileparts(fileparts(fileparts(mfilename('fullpath'))));
 shared_dir = fullfile(repo_root, 'examples', 'real_data', ...
     'ISSMAdjoint', 'shared');
-addpath(shared_dir);
+addpath(genpath(shared_dir));
 
-% Outline-only smoke tests. These generate Geometry/BM2_<Shelf>_Outline.exp,
-% Geometry/<Shelf>_Outline.exp, and Geometry/<Shelf>_GL_preview.png.
+% Outline-only smoke tests. These generate Geometry/<Shelf>_Outline.exp and
+% Geometry/<Shelf>_GL_preview.png from BedMachine.
 shelves = {'Amery', 'LarsenC', 'LarsenD', 'RnFlch', 'Ross'};
+config_files = {'amery.yaml', 'larsenc.yaml', 'larsend.yaml', ...
+    'rnflch.yaml', 'ross.yaml'};
 for k = 1:numel(shelves)
-    config = shelf_config(shelves{k});
-    if ~isfield(config, 'has_roi_input') || config.has_roi_input
-        create_roi_outline_from_mat(config);
-    end
+    config = shelf_config(fullfile(repo_root, 'examples', 'real_data', ...
+        'ISSMAdjoint', 'configs', config_files{k}));
     build_bedmachine_outline(config);
 end
 

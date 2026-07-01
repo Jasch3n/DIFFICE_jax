@@ -2,7 +2,7 @@ function [md, smoke_result] = run_rheology_smoke_inversion(config)
 %RUN_RHEOLOGY_SMOKE_INVERSION Run a non-production 10-step inversion smoke test.
 %
 % Syntax:
-%   config = shelf_config('Ross');
+%   config = shelf_config('configs/ross.yaml');
 %   [md, smoke_result] = run_rheology_smoke_inversion(config);
 %
 % Required input:
@@ -27,34 +27,15 @@ fprintf('Smoke inversion: 10-step MaterialsRheologyBbar solve on %s\n', ...
     config.shelf_name);
 
 md = loadmodel(config.parameterized_path);
-shelf_vertices = md.mask.ocean_levelset < 0 & md.mask.ice_levelset <= 0;
-valid_velocity = shelf_vertices & isfinite(md.inversion.vel_obs) & ...
-    md.inversion.vel_obs >= config.min_speed_for_cost & ...
-    isnan(md.stressbalance.spcvx) & isnan(md.stressbalance.spcvy);
+setup = rheology_b_inversion_setup(config, md, 'smoke');
 
-if ~any(valid_velocity)
-    error('No active velocity-cost vertices for %s smoke inversion.', ...
-        config.shelf_name);
-end
-
-options = struct();
-options.regularization_weights = config.smoke_regularization_weight;
-options.initial_shelf_b_scale = config.initial_shelf_b_scale;
-options.velocity_abs_weight = config.velocity_abs_weight;
-options.np = config.np;
-options.solver_residue_threshold = config.solver_residue_threshold;
-options.maxsteps = config.smoke_invert_maxsteps;
-options.maxiter = config.smoke_invert_maxiter;
-options.rheology_min_temperature = config.rheology_min_temperature;
-options.rheology_max_temperature = config.rheology_max_temperature;
-
-[md, lcurve] = invert_rheology_b_lcurve_core(md, shelf_vertices, ...
-    valid_velocity, options);
+[md, lcurve] = invert_rheology_b_lcurve_core(md, setup.shelf_vertices, ...
+    setup.valid_velocity, setup.options);
 smoke_result = lcurve([lcurve.selected]);
 smoke_result.shelf_name = config.shelf_name;
 smoke_result.pass = ~smoke_result.failed && ...
     isfinite(smoke_result.loss_decrease) && smoke_result.loss_decrease > 0;
-smoke_result.active_velocity_vertices = nnz(valid_velocity);
+smoke_result.active_velocity_vertices = setup.active_velocity_vertices;
 
 fprintf(['Smoke %s: initial J %.6g, final J %.6g, decrease %.6g, ', ...
     'pass %d\n'], config.shelf_name, smoke_result.initial_total_J, ...

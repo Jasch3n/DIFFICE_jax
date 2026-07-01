@@ -14,7 +14,8 @@ script_dir = fileparts(mfilename('fullpath'));
 if isempty(script_dir)
     script_dir = pwd;
 end
-addpath(fullfile(fileparts(script_dir), 'shared'));
+adjoint_dir = fileparts(script_dir);
+addpath(genpath(fullfile(adjoint_dir, 'shared')));
 
-config = shelf_config('RnFlch');
+config = shelf_config(fullfile(adjoint_dir, 'configs', 'rnflch.yaml'));
 run_shelf_inversion_steps(config, steps);

@@ -1,0 +1,15 @@
+name: Amery
+
+data:
+  bedmachine_file: /Users/jiapchen/Research/Data/BedMachineAntarctica-v4.nc
+  measures_file: /Users/jiapchen/Research/Data/MEaSURES-ice-vel/insar_antarctica_ice_velocity_450m_v2.nc
+  bedmachine_bounds: [1.63e6, 2.29e6, 0.56e6, 0.89e6]
+  bedmachine_clip: {}
+
+paths:
+  shelf_dir: ../Amery
+  geometry_dir: ../Amery/Geometry
+  results_dir: ../Amery/Results
+
+inversion:
+  regularization_weight: 1e-17

@@ -29,11 +29,14 @@ function [best_md, lcurve] = invert_rheology_b_lcurve_core(md, ...
 %   ISSM levelsets. Cost functions are [101 502]. ISSM solve, m1qn3inversion,
 %   generic, verbose, cuffey, and oshostname are available.
 
+% 1. Choose controllable rheology-B entries.
 base_B = md.materials.rheology_B;
 control_mask = rheologyControlMask(md, shelf_vertices);
 if ~any(control_mask)
     error('No rheology_B entries are controlled by the floating-shelf mask.');
 end
+
+% 2. Scale the initial shelf B field before each alpha trial.
 base_B(control_mask) = base_B(control_mask) * options.initial_shelf_b_scale;
 
 regularization_weights = options.regularization_weights(:);
@@ -61,13 +64,16 @@ models = cell(nweights, 1);
 for k = 1:nweights
     alpha = regularization_weights(k);
     fprintf('  L-curve alpha %d/%d: %.6g\n', k, nweights, alpha);
+    % 3. Build ISSM inversion parameters for one alpha.
     trial_md = setupInversionParameters(md, base_B, shelf_vertices, ...
         valid_velocity, alpha, options);
 
     lcurve(k).alpha = alpha;
     try
+        % 4. Solve stress balance with m1qn3.
         trial_md = solve(trial_md, 'Stressbalance');
         trial_md = carryForwardInvertedB(trial_md);
+        % 5. Extract objective terms and velocity diagnostics.
         diagnostics = helpers('summarize_velocity_misfit', ...
             trial_md, valid_velocity);
         [Jo, alphaR, R, total_J] = inversionObjectiveTerms(trial_md, alpha);
@@ -104,6 +110,7 @@ finite = find(~[lcurve.failed]' & isfinite([lcurve.Jo]') & ...
 if isempty(finite)
     error('All L-curve rheology_B inversions failed.');
 end
+% 6. Select the L-curve corner, falling back to speed RMSE for short grids.
 if numel(finite) >= 3
     selected_finite_index = chooseLcurveCorner( ...
         log10([lcurve(finite).Jo]'), log10([lcurve(finite).R]'));

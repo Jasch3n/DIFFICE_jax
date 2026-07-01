@@ -2,12 +2,12 @@ function outputs = run_shelf_inversion_steps(config, steps)
 %RUN_SHELF_INVERSION_STEPS Dispatch outline, mesh, parameterization, and solves.
 %
 % Syntax:
-%   config = shelf_config('Amery');
+%   config = shelf_config('configs/amery.yaml');
 %   outputs = run_shelf_inversion_steps(config, [1 2 3 4]);
 %
 % Required inputs:
 %   config - struct from shelf_config.
-%   steps  - numeric vector. Step 0 writes ROI/BedMachine outlines only;
+%   steps  - numeric vector. Step 0 writes the BedMachine outline;
 %       step 1 builds mesh; step 2 parameterizes; step 3 solves initial
 %       stress balance; step 4 runs rheology-B L-curve inversion.
 %
@@ -15,8 +15,8 @@ function outputs = run_shelf_inversion_steps(config, steps)
 %   outputs - struct with fields populated by the requested steps.
 %
 % Saved artifacts:
-%   Step 0 writes Geometry/BM2_<Shelf>_Outline.exp and
-%   Geometry/<Shelf>_Outline.exp. Steps 1-4 write Results/<Shelf>_* artifacts.
+%   Step 0 writes Geometry/<Shelf>_Outline.exp. Steps 1-4 write
+%   Results/<Shelf>_* artifacts.
 %
 % Assumptions:
 %   Geometry/<Shelf>_Outline.exp is generated directly from BM4 in EPSG:3031.
@@ -42,13 +42,11 @@ if isempty(steps)
     return;
 end
 
+if isfield(config, 'config_path')
+    print_config_summary(config);
+end
+
 if any(steps == 0)
-    if ~isfield(config, 'has_roi_input') || config.has_roi_input
-        outputs.roi = create_roi_outline_from_mat(config);
-    else
-        fprintf('No BM2 ROI input configured for %s; skipping BM2 outline.\n', ...
-            config.shelf_name);
-    end
     outputs.outline = build_bedmachine_outline(config);
 end
 

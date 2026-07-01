@@ -2,7 +2,7 @@ function [md, bedmachine_data, valid_velocity] = parameterize_from_bedmachine_me
 %PARAMETERIZE_FROM_BEDMACHINE_MEASURES Set shelf geometry, mask, and fields.
 %
 % Syntax:
-%   config = shelf_config('Amery');
+%   config = shelf_config('configs/amery.yaml');
 %   md = loadmodel(config.mesh_path);
 %   [md, bedmachine_data, valid_velocity] = parameterize_from_bedmachine_measures(config, md);
 %

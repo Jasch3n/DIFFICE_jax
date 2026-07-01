@@ -2,7 +2,7 @@ function [md, lcurve, velocity_diagnostics] = run_rheology_lcurve_inversion(conf
 %RUN_RHEOLOGY_LCURVE_INVERSION Run IO and plots for rheology-B inversion.
 %
 % Syntax:
-%   config = shelf_config('Amery');
+%   config = shelf_config('configs/amery.yaml');
 %   [md, lcurve, diagnostics] = run_rheology_lcurve_inversion(config);
 %
 % Required input:
@@ -36,32 +36,16 @@ fprintf('Step 4: Invert for MaterialsRheologyBbar on %s\n', config.shelf_name);
 
 md = loadmodel(config.parameterized_path);
 
-% Inversion setup, following the same high-level block order as
-% aashray_amery.m: observations are already on md.inversion, then masks choose
-% where velocity misfit and rheology_B regularization are active.
-shelf_vertices = md.mask.ocean_levelset < 0 & md.mask.ice_levelset <= 0;
+setup = rheology_b_inversion_setup(config, md, 'lcurve');
+shelf_vertices = setup.shelf_vertices;
+valid_velocity = setup.valid_velocity;
 fprintf('Floating-shelf vertices controlled in B inversion: %d of %d\n', ...
-    nnz(shelf_vertices), md.mesh.numberofvertices);
-
-valid_velocity = shelf_vertices & isfinite(md.inversion.vel_obs) & ...
-    md.inversion.vel_obs >= config.min_speed_for_cost & ...
-    isnan(md.stressbalance.spcvx) & isnan(md.stressbalance.spcvy);
+    setup.control_vertices, md.mesh.numberofvertices);
 fprintf('Velocity-cost vertices active in full-model shelf inversion: %d\n', ...
-    nnz(valid_velocity));
-
-options = struct();
-options.regularization_weights = config.lcurve_regularization_weights;
-options.initial_shelf_b_scale = config.initial_shelf_b_scale;
-options.velocity_abs_weight = config.velocity_abs_weight;
-options.np = config.np;
-options.solver_residue_threshold = config.solver_residue_threshold;
-options.maxsteps = config.invert_maxsteps;
-options.maxiter = config.invert_maxiter;
-options.rheology_min_temperature = config.rheology_min_temperature;
-options.rheology_max_temperature = config.rheology_max_temperature;
+    setup.active_velocity_vertices);
 
 [md, lcurve] = invert_rheology_b_lcurve_core(md, shelf_vertices, ...
-    valid_velocity, options);
+    valid_velocity, setup.options);
 
 velocity_diagnostics = helpers('summarize_velocity_misfit', md, valid_velocity);
 velocity_diagnostics.lcurve = lcurve;

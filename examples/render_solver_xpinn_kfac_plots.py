@@ -21,23 +21,6 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib import font_manager
 
-
-ARTIFACT_PREFIX = "test_xpinn_joint_inversion_flatbed"
-C_REL_MAE_MIN_TRUTH = 1e-3
-RELATIVE_ERROR_VMAX = 0.15
-DEFAULT_FONT_FAMILY = "Noto Sans"
-DEFAULT_FONT_PATH = Path.home() / "Library" / "Fonts" / "NotoSans-Regular.ttf"
-DEFAULT_FONT_DIR = Path.home() / "Library" / "Fonts"
-DEFAULT_FONT_FILES = (
-    "NotoSans-Light.ttf",
-    "NotoSans-Thin.ttf",
-    "NotoSans-ExtraThin.ttf",
-    "NotoSans-Regular.ttf",
-    "NotoSans-Italic.ttf",
-    "NotoSans-Bold.ttf",
-    "NotoSans-BoldItalic.ttf",
-    "NotoSans-ExtraBold.ttf",
-    "NotoSans-ExtraBoldItalic.ttf",
 )
 
 
@@ -335,9 +318,6 @@ def _plot_paths(plot_dir, tag):
         fields=plot_dir / "fields.png",
         data_fields=plot_dir / "data_fields.png",
         loss=plot_dir / "loss.png",
-        equation_residuals=plot_dir / "equation_residuals.png",
-        x_term_ratios=plot_dir / "x_term_ratio.png",
-        cache=plot_dir / "plot_cache.pkl",
     )
 
 

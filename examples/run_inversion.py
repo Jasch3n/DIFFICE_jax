@@ -72,7 +72,10 @@ def _dataset_point_counts(config):
     data = loadmat(str(_resolve_config_path(config, config.data["source"])))
     velocity = _count_finite_field(data, "ud", "vd")
     thickness = _count_finite_field(data, "hd")
-    surface = _count_finite_field(data, "sd")
+    if config.model.get("workflow") == "xpinn":
+        surface = _count_finite_field(data, "sd", "xd_s", "yd_s")
+    else:
+        surface = _count_finite_field(data, "sd")
     collocation = _count_finite_field(data, "xcol", "ycol")
     interface = _count_finite_field(data, "x_md", "y_md")
     if collocation == 0:
@@ -107,7 +110,7 @@ def _print_point_counts(config):
     n_regions = max(len(config.model.get("regions", [])), 1)
     velocity = _count_points(sampling.get("velocity_data"), n_regions)
     thickness = _count_points(sampling.get("thickness_data"), n_regions)
-    surface = _count_points(sampling.get("surface_data", sampling.get("thickness_data")), n_regions)
+    surface = _count_points(sampling.get("surface_data"), n_regions)
     regular_collocation = _count_points(sampling.get("collocation"), n_regions)
     interface = _count_points(sampling.get("matching"), max(n_regions - 1, 1))
     interface_cfg = config.data.get("interface_collocation", {})

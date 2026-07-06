@@ -10,6 +10,7 @@ import diffice_jax.core.solver as solver_module
 from diffice_jax.core.solver import PreparedState
 from diffice_jax.data.xpinns import sampling as xpinn_sampling
 from diffice_jax.workflow.runtime_env import apply_runtime_env
+from diffice_jax.workflow.runner import _sampling_counts
 
 
 def _pinn_config():
@@ -109,6 +110,38 @@ def _xpinn_config_dict():
             ],
         },
     }
+
+
+def test_xpinn_sampling_counts_keep_independent_surface_count():
+    counts = _sampling_counts(
+        {
+            "velocity_data": [8, 9],
+            "thickness_data": [3, 4],
+            "surface_data": [6, 7],
+            "collocation": [10, 11],
+            "calving_front": [2, 2],
+            "matching": 5,
+        },
+        "xpinn",
+        "joint-inversion",
+    )
+
+    assert counts == [[8, 9], [3, 4], [6, 7], [10, 11], [2, 2], 5]
+
+
+def test_xpinn_sampling_counts_require_surface_count():
+    with pytest.raises(ValueError, match="sampling_counts requires 'surface_data'"):
+        _sampling_counts(
+            {
+                "velocity_data": [8, 9],
+                "thickness_data": [3, 4],
+                "collocation": [10, 11],
+                "calving_front": [2, 2],
+                "matching": 5,
+            },
+            "xpinn",
+            "joint-inversion",
+        )
 
 
 def test_runtime_env_keys_map_to_jax_env(monkeypatch):

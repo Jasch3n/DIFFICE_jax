@@ -22,3 +22,9 @@ selected result is chosen from the velocity-misfit and regularization tradeoff.
 A short rheology-B inversion run used to check that a configured shelf
 experiment can execute and reduce the objective before running the full
 L-curve inversion.
+
+## Surface Elevation Observation Grid
+
+The x/y coordinate grid on which observed surface elevation values are defined.
+For XPINN joint inversion, it is independent from the velocity and thickness
+observation grids.

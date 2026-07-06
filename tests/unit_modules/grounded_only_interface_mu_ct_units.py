@@ -55,6 +55,8 @@ def _raw_two_region_data():
         'yd_h': _obj_pair(y0, y1),
         'hd': _obj_pair(h0, h1),
         'sd': _obj_pair(s0, s1),
+        'xd_s': _obj_pair(x0, x1),
+        'yd_s': _obj_pair(y0, y1),
         'xcol': _obj_pair(x0, x1),
         'ycol': _obj_pair(y0, y1),
         'xct': _obj_pair(np.zeros((0, 0)), np.array([[3.0], [3.0]])),

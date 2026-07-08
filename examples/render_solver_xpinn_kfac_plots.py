@@ -1,3 +1,44 @@
+"""Render XPINN joint-inversion plots from a saved DIFFICESolver.
+
+Two ways to use this module:
+
+1. As a script (monolith) — reproduce the standard figure set from a saved
+   solver directory::
+
+       python examples/render_solver_xpinn_kfac_plots.py \\
+           --config <workflow.yaml> --solver-dir <dir> --tag <name>
+
+   Produces the inversion (mu/C), data-field (u/v/h/s), equation-residual,
+   x-term-ratio, and loss-curve figures under ``<solver-dir>/plots``.
+
+2. As a library — import the plotting helpers and drive them yourself. The
+   reusable, data-source-agnostic building blocks are re-exported in
+   ``__all__`` below. The two you will reach for most:
+
+   - ``configure_plot_font()`` — apply the shared figure styling.
+   - ``tripcolor_regions(ax, regions, key, title, cmap, vmin, vmax)`` — draw a
+     scattered field over one or more regions. A "region" is just a dict with
+     ``x``/``y`` and the value arrays you want to plot (see ``field_region`` /
+     ``value_region`` for the expected shapes).
+
+   Higher-level figure builders (``save_field_comparison``,
+   ``save_predicted_fields``, ``save_equation_residuals``,
+   ``save_x_equation_term_ratios``, ``save_loss_curve``) each take a path and
+   pre-packaged region dicts and write one figure.
+
+Real vs. synthetic data
+-----------------------
+For synthetic ISSM data, viscosity ``mud`` and basal friction ``alpha2d`` are
+ground truth, so the mu/C figure shows truth / inferred / error. For REAL
+data they are inversion *targets* stored as NaN, and surface elevation ``sd``
+lives on its own ``xd_s``/``yd_s`` grid (independent of thickness ``xd_h``/
+``yd_h``). The render layer detects an all-NaN "truth" field and falls back to
+a predicted-only rendering; a field with truth but no prediction falls back to
+observed-only. This makes both the mu/C figure and the surface row degrade
+sensibly on real data without a separate code path. When training on real
+data, use the plain ``joint-inversion`` workflow, never
+``joint-inversion-regression`` (the latter consumes the NaN targets).
+"""
 from pathlib import Path
 import argparse
 import json
@@ -21,7 +62,43 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib import font_manager
 
+
+# Optional Noto Sans styling; falls back to DejaVu Sans if the fonts are
+# absent (see configure_plot_font), so these paths are safe on any machine.
+DEFAULT_FONT_FAMILY = "Noto Sans"
+DEFAULT_FONT_PATH = Path.home() / "Library" / "Fonts" / "NotoSans-Regular.ttf"
+DEFAULT_FONT_DIR = Path.home() / "Library" / "Fonts"
+DEFAULT_FONT_FILES = (
+    "NotoSans-Light.ttf",
+    "NotoSans-Thin.ttf",
+    "NotoSans-ExtraThin.ttf",
+    "NotoSans-Regular.ttf",
+    "NotoSans-Italic.ttf",
+    "NotoSans-Bold.ttf",
+    "NotoSans-BoldItalic.ttf",
+    "NotoSans-ExtraBold.ttf",
+    "NotoSans-ExtraBoldItalic.ttf",
 )
+
+# Ignore near-zero truth when computing C's relative MAE (avoids div-by-~0).
+C_REL_MAE_MIN_TRUTH = 1e-3
+# Upper bound of the magma "relative absolute error" color scale (|err|/|truth|).
+RELATIVE_ERROR_VMAX = 0.5
+
+__all__ = [
+    "configure_plot_font",
+    "tripcolor_regions",
+    "field_region",
+    "value_region",
+    "save_field_comparison",
+    "save_predicted_fields",
+    "save_inversion_comparison",
+    "save_data_field_comparison",
+    "save_equation_residuals",
+    "save_x_equation_term_ratios",
+    "save_loss_curve",
+    "render_from_saved_solver",
+]
 
 
 def configure_plot_font(font_family=DEFAULT_FONT_FAMILY, font_path=DEFAULT_FONT_PATH):
@@ -130,13 +207,132 @@ def _tripcolor_regions(ax, regions, key, title, cmap, vmin, vmax):
     return image
 
 
-def save_inversion_comparison(path, mu_regions, c_regions):
+def save_field_comparison(path, rows, suptitle="XPINN Data Field Comparison", box_aspect=1 / 3):
+    """Truth / prediction / relative-error grid, one field per row.
+
+    Reusable building block. ``rows`` is a list of dicts, each with:
+        regions: list of region dicts (see ``field_region``)
+        title:   display title, e.g. "velocity $u$"
+        unit:    colorbar label, e.g. "m/yr"
+        cmap:    colormap for the truth/pred panels
+        key:     optional short name; if set, its relative MAE is returned
+        min_truth: optional truth floor for the relative-MAE denominator
+
+    Color limits come from the truth percentiles when a truth field is
+    available, otherwise from the prediction — so a field with no ground
+    truth (a real-data inversion target) still renders in its pred column.
+    Returns ``{f"{key}_rel_mae": value}`` for rows that set ``key``.
+    """
+    rows = [r for r in rows if r.get("regions")]
+    if not rows:
+        return {}
     path.parent.mkdir(parents=True, exist_ok=True)
+    stats = {}
+    bounds_regions = [region for r in rows for region in r["regions"]]
+    x_min, x_max, y_min, y_max = _domain_bounds(bounds_regions)
+    fig, axs = plt.subplots(len(rows), 3, figsize=(13, 2.3 * len(rows)), sharex=True, sharey=True)
+    axs = np.atleast_2d(axs)
+    for row_i, row in enumerate(rows):
+        regions = row["regions"]
+        title, label, cmap = row["title"], row["unit"], row["cmap"]
+        truth = _concat_region_values(regions, "truth")
+        pred = _concat_region_values(regions, "pred")
+        rel_mae = _field_stats(pred, truth, min_truth=row.get("min_truth"))
+        if row.get("key"):
+            stats[f"{row['key']}_rel_mae"] = rel_mae
+        limit_src = truth if np.isfinite(truth).any() else pred
+        vmin = np.nanpercentile(limit_src, 5) if np.isfinite(limit_src).any() else np.nan
+        vmax = np.nanpercentile(limit_src, row.get("pmax", 95)) if np.isfinite(limit_src).any() else np.nan
+        err_title = (
+            f"relative absolute error (mean = {100.0 * rel_mae:.2f}%)"
+            if np.isfinite(rel_mae)
+            else "relative absolute error (n/a)"
+        )
+        panels = [
+            (axs[row_i, 0], "truth", f"ground truth {title}", cmap, vmin, vmax, label),
+            (axs[row_i, 1], "pred", f"XPINN-predicted {title}", cmap, vmin, vmax, label),
+            (axs[row_i, 2], "mismatch", err_title, "magma", 0.0, RELATIVE_ERROR_VMAX, "|error| / |truth|"),
+        ]
+        for ax, region_key, panel_title, panel_cmap, lo, hi, colorbar_label in panels:
+            image = _tripcolor_regions(ax, regions, region_key, panel_title, panel_cmap, lo, hi)
+            ax.set_xlim(x_min, x_max)
+            ax.set_ylim(y_min, y_max)
+            ax.set_box_aspect(box_aspect)
+            if image is not None:
+                _add_colorbar(fig, ax, image, colorbar_label)
+    fig.suptitle(suptitle, fontsize=15, fontweight=800)
+    plt.tight_layout()
+    fig.canvas.draw()
+    for ax in fig.axes:
+        _set_axis_font_weight(ax)
+    fig.savefig(path, dpi=220)
+    plt.close(fig)
+    return stats
+
+
+def save_predicted_fields(path, rows, suptitle="XPINN Inferred Fields", box_aspect=1 / 3):
+    """One predicted field per row, no ground-truth/error columns.
+
+    Reusable building block for inversion *targets* (viscosity ``mu``, basal
+    friction ``C``) or any real-data field with no co-located truth. ``rows``
+    is a list of dicts with ``regions``/``title``/``unit``/``cmap`` (optional
+    ``value_key`` — default ``"pred"`` — and ``pmin``/``pmax`` percentiles for
+    the color limits). Color limits come from the plotted field itself.
+    """
+    rows = [r for r in rows if r.get("regions")]
+    if not rows:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    bounds_regions = [region for r in rows for region in r["regions"]]
+    x_min, x_max, y_min, y_max = _domain_bounds(bounds_regions)
+    fig, axs = plt.subplots(len(rows), 1, figsize=(6, 2.8 * len(rows)), sharex=True, sharey=True)
+    axs = np.atleast_1d(axs)
+    for i, row in enumerate(rows):
+        regions = row["regions"]
+        value_key = row.get("value_key", "pred")
+        values = _concat_region_values(regions, value_key)
+        finite = np.isfinite(values).any()
+        lo = np.nanpercentile(values, row.get("pmin", 5)) if finite else np.nan
+        hi = np.nanpercentile(values, row.get("pmax", 95)) if finite else np.nan
+        image = _tripcolor_regions(axs[i], regions, value_key, row["title"], row["cmap"], lo, hi)
+        axs[i].set_xlim(x_min, x_max)
+        axs[i].set_ylim(y_min, y_max)
+        axs[i].set_box_aspect(box_aspect)
+        if image is not None:
+            _add_colorbar(fig, axs[i], image, row["unit"])
+    fig.suptitle(suptitle, fontsize=15, fontweight=800)
+    plt.tight_layout()
+    fig.canvas.draw()
+    for ax in fig.axes:
+        _set_axis_font_weight(ax)
+    fig.savefig(path, dpi=220)
+    plt.close(fig)
+
+
+def save_inversion_comparison(path, mu_regions, c_regions):
+    """Viscosity/basal-friction figure.
+
+    Synthetic data (mu/C are ISSM ground truth): truth / inferred / error,
+    3x2. Real data (mu/C are NaN inversion targets): auto-detected and
+    rendered as an inferred-only figure (no truth/error). Returns the mu and
+    C relative MAEs (NaN on real data).
+    """
     mu_true = _concat_region_values(mu_regions, "truth")
-    mu_pred = _concat_region_values(mu_regions, "pred")
     c_true = _concat_region_values(c_regions, "truth")
+    if not (np.isfinite(mu_true).any() or np.isfinite(c_true).any()):
+        save_predicted_fields(
+            path,
+            [
+                dict(regions=mu_regions, title="inferred viscosity $\\mu$", unit="Pa s", cmap="viridis"),
+                dict(regions=c_regions, title="inferred basal friction $C$", unit="Pa s/m", cmap="cool", pmax=80),
+            ],
+            suptitle="XPINN Joint Inversion (inferred fields)",
+        )
+        return float("nan"), float("nan")
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    mu_pred = _concat_region_values(mu_regions, "pred")
     c_pred = _concat_region_values(c_regions, "pred")
-    c_mismatch = _concat_region_values(c_regions, "mismatch")
     mu_rel_mae = _field_stats(mu_pred, mu_true)
     c_rel_mae = _field_stats(c_pred, c_true, min_truth=C_REL_MAE_MIN_TRUTH)
 
@@ -162,7 +358,7 @@ def save_inversion_comparison(path, mu_regions, c_regions):
         ax.set_box_aspect(1 / 3)
         if image is not None:
             _add_colorbar(fig, ax, image, label)
-    fig.suptitle("Synthetic XPINN Joint Inversion (K-FAC Optimizer)", fontsize=15, fontweight=800)
+    fig.suptitle("XPINN Joint Inversion (K-FAC Optimizer)", fontsize=15, fontweight=800)
     plt.tight_layout()
     fig.canvas.draw()
     for ax in fig.axes:
@@ -173,51 +369,24 @@ def save_inversion_comparison(path, mu_regions, c_regions):
 
 
 def save_data_field_comparison(path, data_regions):
-    path.parent.mkdir(parents=True, exist_ok=True)
+    """u/v/h/s truth-vs-prediction grid (thin adapter over save_field_comparison).
+
+    ``data_regions`` maps field name -> list of region dicts. Missing/empty
+    fields are skipped; a field with truth but no prediction (e.g. real-data
+    surface, where the network isn't evaluated at the surface points) renders
+    observed-only, and one with prediction but no truth renders pred-only.
+    """
     field_specs = [
         ("u", "velocity $u$", "m/yr", "viridis"),
         ("v", "velocity $v$", "m/yr", "viridis"),
         ("h", "ice thickness $h$", "m", "terrain"),
         ("s", "surface elevation $s$", "m", "terrain"),
     ]
-    active_specs = [(key, title, label, cmap) for key, title, label, cmap in field_specs if data_regions.get(key)]
-    if not active_specs:
-        return {}
-
-    stats = {}
-    bounds_regions = [region for key, _, _, _ in active_specs for region in data_regions[key]]
-    x_min, x_max, y_min, y_max = _domain_bounds(bounds_regions)
-    fig, axs = plt.subplots(len(active_specs), 3, figsize=(13, 2.3 * len(active_specs)), sharex=True, sharey=True)
-    axs = np.atleast_2d(axs)
-    for row, (key, title, label, cmap) in enumerate(active_specs):
-        regions = data_regions[key]
-        truth = _concat_region_values(regions, "truth")
-        pred = _concat_region_values(regions, "pred")
-        mismatch = _concat_region_values(regions, "mismatch")
-        rel_mae = _field_stats(pred, truth)
-        stats[f"{key}_rel_mae"] = rel_mae
-        vmin = np.nanpercentile(truth, 5)
-        vmax = np.nanpercentile(truth, 95)
-        panels = [
-            (axs[row, 0], "truth", f"ground truth {title}", cmap, vmin, vmax, label),
-            (axs[row, 1], "pred", f"XPINN-predicted {title}", cmap, vmin, vmax, label),
-            (axs[row, 2], "mismatch", f"relative absolute error (mean = {100.0 * rel_mae:.2f}%)", "magma", 0.0, RELATIVE_ERROR_VMAX, "|error| / |truth|"),
-        ]
-        for ax, region_key, panel_title, panel_cmap, lo, hi, colorbar_label in panels:
-            image = _tripcolor_regions(ax, regions, region_key, panel_title, panel_cmap, lo, hi)
-            ax.set_xlim(x_min, x_max)
-            ax.set_ylim(y_min, y_max)
-            ax.set_box_aspect(1 / 3)
-            if image is not None:
-                _add_colorbar(fig, ax, image, colorbar_label)
-    fig.suptitle("Synthetic XPINN Data Field Comparison", fontsize=15, fontweight=800)
-    plt.tight_layout()
-    fig.canvas.draw()
-    for ax in fig.axes:
-        _set_axis_font_weight(ax)
-    fig.savefig(path, dpi=220)
-    plt.close(fig)
-    return stats
+    rows = [
+        dict(regions=data_regions.get(key) or [], title=title, unit=label, cmap=cmap, key=key)
+        for key, title, label, cmap in field_specs
+    ]
+    return save_field_comparison(path, rows, suptitle="XPINN Data Field Comparison")
 
 
 def _signed_percentile_limit(regions, key="value", percentile=98, floor=1e-12):
@@ -315,8 +484,11 @@ def _plot_paths(plot_dir, tag):
     plot_dir.mkdir(parents=True, exist_ok=True)
     return dict(
         output=plot_dir / "data.npz",
+        cache=plot_dir / "plot_cache.pkl",
         fields=plot_dir / "fields.png",
         data_fields=plot_dir / "data_fields.png",
+        equation_residuals=plot_dir / "equation_residuals.png",
+        x_term_ratios=plot_dir / "x_term_ratios.png",
         loss=plot_dir / "loss.png",
     )
 
@@ -407,13 +579,46 @@ def _region_thickness_truth(solver, idx, key):
     return _region_truth(solver, idx, key, 1)
 
 
+def _region_surface_truth(solver, idx):
+    """Observed surface elevation with its own coordinates.
+
+    Real data: ``sd`` lives on ``xd_s``/``yd_s`` (index_set 2), independent of
+    thickness. Synthetic/legacy data without ``xd_s`` falls back to the
+    thickness grid (index_set 1), preserving the historical behavior. Returns
+    ``(s_true, x_s, y_s)`` — with ``x_s``/``y_s`` None to signal the caller to
+    use the thickness coordinates — or None if ``sd`` is unavailable.
+    """
+    raw_data = solver.state.raw_data
+    if "sd" not in raw_data:
+        return None
+    data = solver.state.normalized_data[idx]
+    idxvals = data[4][4]
+    has_surface = len(idxvals) > 2 and "xd_s" in raw_data and "yd_s" in raw_data
+    iset = 2 if has_surface else 1
+    idxval = np.asarray(jax.device_get(idxvals[iset]), dtype=int).reshape(-1)
+    s_true = np.asarray(raw_data["sd"][0, idx]).reshape(-1)[idxval]
+    if has_surface:
+        x_s = np.asarray(raw_data["xd_s"][0, idx]).reshape(-1)[idxval]
+        y_s = np.asarray(raw_data["yd_s"][0, idx]).reshape(-1)[idxval]
+        return s_true, x_s, y_s
+    return s_true, None, None
+
+
 def _field_region(x, y, truth, pred, min_truth=None):
-    truth = np.asarray(truth)
-    pred = np.asarray(pred)
-    mask = np.isfinite(truth)
+    """Package one field's coordinates + truth/prediction into a region dict.
+
+    ``truth`` or ``pred`` may be None (or all-NaN) when only one side is
+    available — e.g. an inversion target has a prediction but no truth, and a
+    real-data surface field may have observed truth but no co-located
+    prediction. The missing side is filled with NaN so the render layer can
+    detect it and drop the corresponding panel(s).
+    """
+    truth = _nan_if_none(truth, x)
+    pred = _nan_if_none(pred, x)
+    mask = np.isfinite(truth) & np.isfinite(pred)
     if min_truth is not None:
         mask &= np.abs(truth) > min_truth
-    mismatch = np.full_like(pred, np.nan, dtype=float)
+    mismatch = np.full(pred.shape, np.nan, dtype=float)
     mismatch[mask] = np.abs(pred[mask] - truth[mask]) / np.maximum(np.abs(truth[mask]), 1e-12)
     return dict(
         x=np.asarray(x).reshape(-1),
@@ -424,8 +629,28 @@ def _field_region(x, y, truth, pred, min_truth=None):
     )
 
 
+def _nan_if_none(values, like):
+    if values is None:
+        return np.full(np.asarray(like).reshape(-1).shape, np.nan, dtype=float)
+    return np.asarray(values, dtype=float).reshape(-1)
+
+
 def _value_region(x, y, value):
     return dict(x=np.asarray(x).reshape(-1), y=np.asarray(y).reshape(-1), value=np.asarray(value).reshape(-1))
+
+
+# Public aliases for the reusable primitives (see module docstring / __all__).
+tripcolor_regions = _tripcolor_regions
+field_region = _field_region
+value_region = _value_region
+
+
+def _has_finite(regions, key):
+    """True if any region has >=3 finite values under ``key`` (worth plotting)."""
+    for region in regions:
+        if np.count_nonzero(np.isfinite(np.asarray(region.get(key)))) >= 3:
+            return True
+    return False
 
 
 def _prediction_plot_cache(solver, predictions, diagnostics, loss_history, tag, metadata):
@@ -447,7 +672,7 @@ def _prediction_plot_cache(solver, predictions, diagnostics, loss_history, tag, 
         u_true = _region_velocity_truth(solver, idx, "ud")
         v_true = _region_velocity_truth(solver, idx, "vd")
         h_true = _region_thickness_truth(solver, idx, "hd")
-        s_true = _region_thickness_truth(solver, idx, "sd")
+        surface = _region_surface_truth(solver, idx)
         if mu_true is not None:
             mu_regions.append(_field_region(x, y, mu_true, mu_pred))
         if c_true is not None and np.isfinite(c_pred).any():
@@ -458,16 +683,30 @@ def _prediction_plot_cache(solver, predictions, diagnostics, loss_history, tag, 
         if v_true is not None:
             v_pred = np.asarray(jax.device_get(region["v"])).reshape(-1)
             data_field_regions["v"].append(_field_region(x, y, v_true, v_pred))
+        x_h = np.asarray(jax.device_get(region["x_h"])).reshape(-1)
+        y_h = np.asarray(jax.device_get(region["y_h"])).reshape(-1)
         if h_true is not None:
-            x_h = np.asarray(jax.device_get(region["x_h"])).reshape(-1)
-            y_h = np.asarray(jax.device_get(region["y_h"])).reshape(-1)
             h_pred = np.asarray(jax.device_get(region["h_thickness"])).reshape(-1)
             data_field_regions["h"].append(_field_region(x_h, y_h, h_true, h_pred))
-        if s_true is not None:
-            x_h = np.asarray(jax.device_get(region["x_h"])).reshape(-1)
-            y_h = np.asarray(jax.device_get(region["y_h"])).reshape(-1)
+        if surface is not None:
+            s_true, x_s, y_s = surface
+            if x_s is None:  # legacy: surface shares the thickness grid
+                x_s, y_s = x_h, y_h
+            # The network's surface prediction (s_thickness) is evaluated at
+            # the thickness points. Pair it with observed s only when the
+            # surface points coincide with them (synthetic/co-located case);
+            # otherwise render observed-only, since we have no prediction at
+            # the independent xd_s/yd_s points (see module docstring).
             s_pred = np.asarray(jax.device_get(region["s_thickness"])).reshape(-1)
-            data_field_regions["s"].append(_field_region(x_h, y_h, s_true, s_pred))
+            colocated = (
+                x_s.shape == x_h.shape
+                and s_pred.shape == x_s.shape
+                and np.allclose(x_s, x_h)
+                and np.allclose(y_s, y_h)
+            )
+            data_field_regions["s"].append(
+                _field_region(x_s, y_s, s_true, s_pred if colocated else None)
+            )
 
     for region in diagnostics["regions"]:
         idx = region["index"]

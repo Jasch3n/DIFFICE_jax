@@ -1,0 +1,16 @@
+name: LarsenC
+
+data:
+  bedmachine_file: /Users/jiapchen/Research/Data/BedMachineAntarctica-v4.nc
+  measures_file: /Users/jiapchen/Research/Data/MEaSURES-ice-vel/insar_antarctica_ice_velocity_450m_v2.nc
+  bedmachine_bounds: [-2.38e6, -1.55e6, 0.88e6, 1.34e6]
+  bedmachine_clip:
+    xmax: -2.0e6
+
+paths:
+  shelf_dir: ../LarsenC
+  geometry_dir: ../LarsenC/Geometry
+  results_dir: ../LarsenC/Results
+
+inversion:
+  regularization_weight: 1e-17

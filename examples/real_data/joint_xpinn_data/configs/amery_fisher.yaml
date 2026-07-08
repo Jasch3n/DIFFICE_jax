@@ -1,0 +1,56 @@
+# Amery Ice Shelf + Fisher Glacier grounding zone — Amery is fed by three
+# separate tributaries (Lambert, Mellor, Fisher) in basins_refined_v2.mat.
+# Build-tested, visually spot-checked, and run through compare_sources +
+# both checks subcommands (see ../HANDOFF.md); the floating-region checks
+# come out identical to Lambert's by construction (grounding_zone only
+# changes the grounded region for Amery — see HANDOFF.md).
+
+ice_shelf: Amery
+grounding_zone: Fisher
+buffer_km: 100
+
+# Restrict the grounded region to Fisher's own fast trunk so the grounded
+# polygon, its grounding line, and the velocity data all coincide (see
+# amery_lambert.yaml for the full rationale). Fisher is slower and more
+# mixed than Lambert/Mellor (GL speed median ~241 m/yr, max ~585), so it
+# needs a higher min_speed_myr=300 to isolate a trunk whose flow-filtered
+# GL coincides with the corridor boundary: swept, min_speed_myr=150/200
+# still left the GL trailing a median 5-8km / max 12-16km past the
+# corridor, while 300 (with corridor_margin_km=25) brings it to <50m.
+region_strategy: flow_restricted
+region_strategy_kwargs:
+  min_speed_myr: 300.0
+  corridor_margin_km: 25.0
+
+# Restrict the floating region to a corridor around Fisher's own flow rather
+# than the whole Amery shelf (see amery_lambert.yaml for the rationale).
+# min_normal_velocity_myr is set explicitly here rather than inheriting
+# min_speed_myr=300 (the grounded-corridor threshold): the flux-gate seeds'
+# inward-normal velocity component is much lower than the along-flow trunk
+# speed, so 300 leaves zero seeds (11 at 50, 8 at 100, 1 at 150, 0 at >=250).
+# 100 keeps the faster inflow seeds while still tracing Fisher's own trunk.
+floating_region_source: flowline_corridor
+floating_region_kwargs:
+  margin_km: 15.0
+  taper_km: 0.0
+  min_normal_velocity_myr: 100.0
+
+# BEDMAP1 (1966-2000) concatenated with BEDMAP2's BGR PCMEGA survey
+# (2002-2003, Lambert Glacier / Prince Charles Mountains) — the latter
+# fills in real coverage gaps BEDMAP1 alone leaves in this area.
+sparse_thickness_source: concat
+sparse_thickness_kwargs:
+  sources:
+    - source: bedmap1_csv
+    - source: bedmap2_csv
+
+# Resample the (ordered, measures_boundaries_2008 default) grounding line
+# so no two consecutive points are more than 500m apart — its native
+# ~23-point resolution otherwise overshoots the nominal buffer radius near
+# vertices in ols_d (see ../HANDOFF.md).
+grounding_line_resample_m: 500.0
+
+# Exclude near-stagnant grounded ice (e.g. near the ice divide) from the
+# grounded region's training data — only keep points flowing faster than
+# this.
+grounded_min_speed_myr: 100.0

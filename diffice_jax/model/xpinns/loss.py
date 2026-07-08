@@ -16,6 +16,13 @@ def ms_error(diff):
     return jnp.sum(jnp.square(diff), axis=0) / jnp.maximum(diff.shape[0], 1.0)
 
 
+def surface_sample_points(sample, idx):
+    if not hasattr(sample, "Xh_smp"):
+        return sample[7][idx] if len(sample) > 7 else sample[2][idx]
+    xs_smp = getattr(sample, "Xs_smp", None)
+    return sample.Xh_smp[idx] if xs_smp is None else xs_smp[idx]
+
+
 # take the nth power root with original sign
 def nthrt(x, n):
     return jnp.sign(x) * jnp.abs(x) ** (1/n)
@@ -142,6 +149,7 @@ def loss_iso_create(solNN, eqn_all, sub_scales:List[SubScaleResult], idxgall, lw
         xh_smp = data['smp'][2][idx]
         h_smp = data['smp'][3][idx]
         s_smp = data['smp'][4][idx]
+        xs_smp = surface_sample_points(data['smp'], idx)
 
         if use_regression:
             mu_smp = data['smp'][5][idx]
@@ -159,7 +167,7 @@ def loss_iso_create(solNN, eqn_all, sub_scales:List[SubScaleResult], idxgall, lw
         out = net(x_smp)
         u_pred = out[:, 0:2]
         h_pred = net(xh_smp)[:, 2:3]
-        s_pred = net(xh_smp)[:, 3:4]
+        s_pred = net(xs_smp)[:, 3:4]
         if use_regression:
             mu_pred = out[:, 4:5]
             C_pred  = out[:, 5:6]
@@ -480,9 +488,6 @@ def _loss_xpinn_create(solNN:Tuple[Callable], idxgall:List[int],
     # eqn_w *= 10.0
     ct_w = jnp.array([1.]) if grounded_only_interface_mu_ct else jnp.array([1., 1.])
     # ct_w *= 10.0
-    # md_w order: u, v, h, s, log(mu), 
-    #             u_x, u_y, v_x, v_y, h_x, h_y, (log(mu))_x, (log(mu))_y, 
-    #             u_xx, 0.5*(u_xy+u_yx), u_yy, v_xx, 0.5*(v_xy+v_yx), v_yy.
     md_w_default = jnp.array([1., 1., 1., 1., 1.,
                               0.6, 0.6, 0.6, 0.6, 0.0, 0.0, 0.6, 0.6,
                               0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
@@ -607,13 +612,15 @@ def _loss_xpinn_create(solNN:Tuple[Callable], idxgall:List[int],
         xh_smp = data['smp'][2][idx]
         h_smp = data['smp'][3][idx]
         s_smp = data['smp'][4][idx]
+        xs_smp = surface_sample_points(data['smp'], idx)
 
         # network predictions
         out = net(x_smp)
         out_h = net(xh_smp)
+        out_s = net(xs_smp)
         u_pred = out[:, 0:2]
         h_pred = out_h[:, 2:3]
-        s_pred = out_h[:, 3:4]
+        s_pred = out_s[:, 3:4]
         mu_pred = out[:, 4:5]
         C_pred = out[:, 5:6]
 
@@ -696,19 +703,22 @@ def _loss_xpinn_create(solNN:Tuple[Callable], idxgall:List[int],
         xh_smp = data['smp'][2][idx]
         h_smp = data['smp'][3][idx]
         s_smp = data['smp'][4][idx]
+        xs_smp = surface_sample_points(data['smp'], idx)
         out = net(x_smp)
         out_h = net(xh_smp)
+        out_s = net(xs_smp)
         global_weight = current_region_term_weight(data, 'data', idx)
         if global_weight is None:
             global_weight = data_global_weight
         n_active = active_region_count(data)
         smp_weight = jnp.sqrt(global_weight * data_w / (n_data_terms * n_active * x_smp.shape[0]))
         h_weight = jnp.sqrt(global_weight * data_w / (n_data_terms * n_active * xh_smp.shape[0]))
+        s_weight = jnp.sqrt(global_weight * data_w / (n_data_terms * n_active * xs_smp.shape[0]))
         u_target = u_smp
         res = [smp_weight[0:2] * (out[:, 0:2] - u_target)]
         res += [
             h_weight[2:3] * (out_h[:, 2:3] - h_smp),
-            h_weight[3:4] * (out_h[:, 3:4] - s_smp),
+            s_weight[3:4] * (out_s[:, 3:4] - s_smp),
         ]
         if include_inverse_data:
             mu_smp = data['smp'][5][idx]
@@ -1037,12 +1047,14 @@ def _loss_xpinn_create(solNN:Tuple[Callable], idxgall:List[int],
         xh_smp = data['smp'][2][idx]
         h_smp = data['smp'][3][idx]
         s_smp = data['smp'][4][idx]
+        xs_smp = surface_sample_points(data['smp'], idx)
         out = net(x_smp)
         out_h = net(xh_smp)
+        out_s = net(xs_smp)
 
         data_u_err = ms_error(out[:, 0:2] - u_smp)
         data_h_err = ms_error(out_h[:, 2:3] - h_smp)
-        data_s_err = ms_error(out_h[:, 3:4] - s_smp)
+        data_s_err = ms_error(out_s[:, 3:4] - s_smp)
 
         global_weight = current_region_term_weight(data, 'data', idx)
         if global_weight is None:
@@ -1050,10 +1062,11 @@ def _loss_xpinn_create(solNN:Tuple[Callable], idxgall:List[int],
         n_active = active_region_count(data)
         smp_weight = jnp.sqrt(global_weight * data_w / (n_data_terms * n_active * x_smp.shape[0]))
         h_weight = jnp.sqrt(global_weight * data_w / (n_data_terms * n_active * xh_smp.shape[0]))
+        s_weight = jnp.sqrt(global_weight * data_w / (n_data_terms * n_active * xs_smp.shape[0]))
         res = [
             smp_weight[0:2] * (out[:, 0:2] - u_smp),
             h_weight[2:3] * (out_h[:, 2:3] - h_smp),
-            h_weight[3:4] * (out_h[:, 3:4] - s_smp),
+            s_weight[3:4] * (out_s[:, 3:4] - s_smp),
         ]
 
         if include_inverse_data:

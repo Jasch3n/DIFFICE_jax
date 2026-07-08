@@ -1,0 +1,52 @@
+# Pine Island Ice Shelf + Pine Island Glacier grounding zone, 100km
+# upstream buffer. Both the ice-shelf and basin polygons are named "Pine
+# Island" in iceshelves_2008_v2.mat / basins_refined_v2.mat respectively,
+# and basin.distance(shelf) == 0.0 — the shelf is fed almost entirely by
+# its own namesake glacier, not by several named tributaries the way
+# Amery (Lambert/Mellor/Fisher) or Ross East (many outlet glaciers) are.
+#
+# Investigated before writing this config (see ../HANDOFF.md-style
+# reasoning): the shelf polygon's bounding box (~124km x 108km, area
+# ~6120 km^2) is Amery-scale, not Ross-East-scale, so floating_region
+# stays at its whole_shelf default — no evidence PIG's floating region
+# needs corridor-restriction the way Ross East's did.
+#
+# The grounded side is a different story. Pine Island basin's own
+# boundary is enormous (bounding box spans hundreds of km upstream — it
+# drains a large fraction of West Antarctica), and sampling real MEaSURES
+# velocity along the ~210-point contiguous run of basin boundary within
+# 3km of the shelf boundary gave speeds from ~5 to ~3864 m/yr, median
+# only ~159 m/yr (10th/90th percentile ~18 / ~1310) — the same
+# "geometric basin edge != fast glacier trunk" pattern documented for
+# Byrd/Ross East, not an Amery-style narrow interface. A threshold grid
+# search (300/500/800/1000/1500/2000 m/yr) found the run structure
+# collapses from 7 fragments (300 m/yr) to a single contiguous segment
+# at 800 m/yr and stays a single segment through 2000 m/yr, with arc
+# length ~44km at 800-1000 m/yr — consistent with Pine Island Glacier's
+# well-documented fast, channelized, ~30-40km-wide grounding-line trunk
+# (one of the fastest-flowing glaciers in Antarctica, unlike Byrd's
+# slower ~800-900 m/yr trunk that needed only 500 m/yr to isolate).
+region_strategy: flow_restricted
+region_strategy_kwargs:
+  min_speed_myr: 800.0
+  corridor_margin_km: 15.0
+
+ice_shelf: Pine Island
+grounding_zone: Pine Island
+buffer_km: 100
+
+# BedMachine for both thickness roles (dense role already defaults to
+# this) — no BEDMAP1/2 concat, unlike the Amery configs.
+dense_thickness_source: bedmachine_v3
+sparse_thickness_source: bedmachine_v3
+
+# Resample the (ordered, measures_boundaries_2008 default) grounding
+# line so no two consecutive points are more than 500m apart — same
+# rationale as the Amery/Byrd configs (see ../HANDOFF.md).
+grounding_line_resample_m: 500.0
+
+# NOT yet build-tested end to end, unlike Amery/Byrd — see HANDOFF.md
+# once this has been through build_dataset/plot_validation/compare_sources/
+# checks. floating_region_source, grounded_min_speed_myr, and the exact
+# corridor_margin_km value above are first-pass choices pending that
+# validation pass, not confirmed the way Byrd's equivalents are.

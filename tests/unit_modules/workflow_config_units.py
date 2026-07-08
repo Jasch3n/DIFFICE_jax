@@ -357,7 +357,7 @@ def test_legacy_json_workflow_config_builds_xpinn_solver(tmp_path):
     assert stage.adaptive_sampling_period == 11
     assert xpinn_sampling.N_INTERFACE_LIBRARY == 9
     assert xpinn_sampling.N_INTERFACE_COLLOCATION == 5
-    assert solver.data_config.sampling_counts == [[4, 4], [4, 4], [4, 4]]
+    assert solver.data_config.sampling_counts == [[4, 4], [4, 4], [4, 4], [4, 4]]
 
 
 def test_adaptive_sampling_burnin_alias_is_normalized(tmp_path):
@@ -513,7 +513,7 @@ training:
 
     assert solver.data_config.regression_workflow is False
     assert solver.loss_config.name == "joint_inversion"
-    assert solver.data_config.sampling_counts == [[4, 4], [4, 4], [4, 4], [2, 2], 3]
+    assert solver.data_config.sampling_counts == [[4, 4], [4, 4], [4, 4], [4, 4], [2, 2], 3]
 
 
 def test_solver_save_serializes_workflow_paths_and_arrays(tmp_path):

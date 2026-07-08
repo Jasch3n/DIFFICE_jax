@@ -1,0 +1,64 @@
+name: xpinn_joint_AmeryLambert_smoke
+workflow: joint_inversion
+
+runtime:
+  jax_platform: cpu
+
+data:
+  source: ../joint_xpinn_data/output/Amery_Lambert_100km/Amery_Lambert_100km.mat
+  interface_collocation:
+    library_size: 300
+    sample_count: 100
+  sampling_counts:
+    velocity_data: [256, 256]
+    thickness_data: [256, 256]
+    surface_data: [256, 256]
+    collocation: [256, 256]
+    calving_front: [100, 100]
+    matching: 40
+
+model:
+  workflow: xpinn
+  regions:
+    - index: 0
+      kind: grounded
+    - index: 1
+      kind: floating
+  network:
+    depth: 6
+    width: 30
+
+equation:
+  name: ssa_iso
+
+loss:
+  name: joint_inversion
+  matching: true
+  calving_front: true
+  use_gpinn: true
+  active_regions: [0, 1]
+
+training:
+  seed: 8132002
+  global_weights:
+    data: 1.0
+    equation: 0.01
+    calving_front: 0.05
+    matching: 1.0
+    gpinn: 0.001
+    mu_gradient: 0.0
+  stages:
+    - optimizer:
+        name: kfac
+        learning_rate: null
+        damping: .nan
+        parameters:
+          preset: xpinn_joint_inversion_reference
+          log_rate: 5
+          interface_points: all
+          active_regions: [0, 1]
+      iterations: 20
+      adaptive_sampling: false
+
+artifacts:
+  output_dir: /private/tmp/claude-501/-Users-jiapchen-Software-DIFFICE-jax/ba30c576-a101-4268-8aed-5976f7dfced8/scratchpad/joint_smoke_AmeryLambert

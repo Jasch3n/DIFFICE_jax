@@ -82,6 +82,15 @@ def _diff(path: str, a, b, mismatches: list[str]) -> None:
             return
         if a.size == 0:
             return
+        if a.dtype == object or b.dtype == object:
+            # A MATLAB-style "cell" array (e.g. x_md/y_md: one cell per
+            # interface, each holding its own point array) — np.array_equal
+            # can't reduce this (each element is itself a non-scalar array,
+            # so `(a1 == a2).all()` raises "ambiguous truth value"). Recurse
+            # into each cell instead of comparing the container directly.
+            for idx, (ai, bi) in enumerate(zip(a.flat, b.flat)):
+                _diff(f"{path}[{idx}]", ai, bi, mismatches)
+            return
         if a.dtype.kind in "fc" and b.dtype.kind in "fc":
             if not np.allclose(a, b, rtol=RTOL, atol=ATOL, equal_nan=True):
                 max_diff = np.nanmax(np.abs(a - b))

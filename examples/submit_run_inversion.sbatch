@@ -22,7 +22,8 @@ if [ "$#" -lt 1 ]; then
     exit 1
 fi
 
-SCRIPT_DIR="/oak/stanford/groups/cyaolai/JasperChen/Software/DIFFICE_jax/examples"
+SCRIPT_PATH="$(realpath "${BASH_SOURCE[0]}")"
+SCRIPT_DIR="$(cd "$(dirname "${SCRIPT_PATH}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 CONFIG_ARG="$1"
 shift

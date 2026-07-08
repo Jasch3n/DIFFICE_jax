@@ -8,7 +8,14 @@ defaults = struct();
 defaults.name = '';
 
 defaults.runtime = struct();
-defaults.runtime.issm_dir = '/Users/jiapchen/Software/ISSM';
+% Portable ISSM install location: override per machine via the
+% DIFFICE_ISSM_DIR environment variable; fall back to the original
+% author's local layout so nothing changes on that machine.
+issm_dir = getenv('DIFFICE_ISSM_DIR');
+if isempty(issm_dir)
+    issm_dir = '/Users/jiapchen/Software/ISSM';
+end
+defaults.runtime.issm_dir = issm_dir;
 defaults.runtime.np = 2;
 
 defaults.data = struct();

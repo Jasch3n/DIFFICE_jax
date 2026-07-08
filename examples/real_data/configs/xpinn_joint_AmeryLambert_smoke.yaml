@@ -61,4 +61,4 @@ training:
       adaptive_sampling: false
 
 artifacts:
-  output_dir: /private/tmp/claude-501/-Users-jiapchen-Software-DIFFICE-jax/ba30c576-a101-4268-8aed-5976f7dfced8/scratchpad/joint_smoke_AmeryLambert
+  output_dir: ../joint_smoke_AmeryLambert

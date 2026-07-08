@@ -1,8 +1,8 @@
 name: Ross
 
 data:
-  bedmachine_file: /Users/jiapchen/Research/Data/BedMachineAntarctica-v4.nc
-  measures_file: /Users/jiapchen/Research/Data/MEaSURES-ice-vel/insar_antarctica_ice_velocity_450m_v2.nc
+  bedmachine_file: ${DIFFICE_DATA_ROOT}/BedMachineAntarctica-v4.nc
+  measures_file: ${DIFFICE_DATA_ROOT}/MEaSURES-ice-vel/insar_antarctica_ice_velocity_450m_v2.nc
   bedmachine_bounds: [-0.65e6, 0.45e6, -1.40e6, -0.38e6]
   bedmachine_clip: {}
 

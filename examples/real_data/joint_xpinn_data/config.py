@@ -6,12 +6,18 @@ ice shelf or grounding zone never requires touching source code — only
 these values (or ones passed at call time).
 """
 
+import os
 from dataclasses import dataclass, field, fields
 from pathlib import Path
 
 import yaml
 
-DATA_ROOT = Path("/Users/jiapchen/Research/Data")
+# Root of the raw observational data (MEaSURES velocity, BedMachine,
+# BEDMAP, Antarctic-boundaries, ...). This directory is NOT part of the
+# git repo (see CLAUDE.md). Override per machine with the
+# DIFFICE_DATA_ROOT environment variable; the fallback is the original
+# author's local layout so nothing changes for that machine.
+DATA_ROOT = Path(os.environ.get("DIFFICE_DATA_ROOT", "/Users/jiapchen/Research/Data"))
 
 DEFAULT_PATHS = {
     "measures_velocity": DATA_ROOT / "MEaSURES-ice-vel" / "insar_antarctica_ice_velocity_450m_v2.nc",

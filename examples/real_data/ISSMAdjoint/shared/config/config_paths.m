@@ -133,11 +133,33 @@ end
 end
 
 function path = resolvePath(base_dir, path)
-path = char(path);
+path = expandEnvVars(char(path));
 if isempty(path) || isAbsolutePath(path)
     return;
 end
 path = char(java.io.File(fullfile(base_dir, path)).getCanonicalPath());
+end
+
+function out = expandEnvVars(path)
+%EXPANDENVVARS Expand ${VAR} tokens using environment variables.
+%
+% Keeps configs portable: paths can reference e.g. ${DIFFICE_DATA_ROOT}
+% instead of hardcoding a machine-specific absolute root. Errors loudly
+% if a referenced variable is unset, rather than silently producing a
+% broken path.
+out = path;
+tokens = regexp(out, '\$\{([A-Za-z_][A-Za-z0-9_]*)\}', 'tokens');
+for k = 1:numel(tokens)
+    name = tokens{k}{1};
+    value = getenv(name);
+    if isempty(value)
+        error('config:missingEnv', ...
+            ['Environment variable %s is referenced in a config path ', ...
+            'but is not set. Export it (e.g. DIFFICE_DATA_ROOT) before ', ...
+            'running.'], name);
+    end
+    out = strrep(out, ['${' name '}'], value);
+end
 end
 
 function tf = isAbsolutePath(path)

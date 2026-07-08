@@ -1,0 +1,74 @@
+# Amery / Lambert joint inversion (real data) — CPU SMOKE TEST.
+# Mirrors xpinn_joint_AmeryLambert_kfac_RAD_50k.yaml but with iterations=20
+# and a tiny RAD burn-in/period so the adaptive-sampling path is exercised
+# within the run. Data-sampling counts are trimmed for fast CPU execution;
+# the collocation counts [500, 1500] match the production config.
+name: xpinn_joint_AmeryLambert_kfac_RAD_smoke
+workflow: joint_inversion
+
+runtime:
+  jax_platform: cpu
+
+data:
+  source: ../joint_xpinn_data/output/Amery_Lambert_100km/Amery_Lambert_100km.mat
+  interface_collocation:
+    library_size: 300
+    sample_count: 100
+  sampling_counts:
+    velocity_data: [512, 512]
+    thickness_data: [512, 512]
+    surface_data: [512, 512]
+    # Same collocation counts as production: [grounded, floating].
+    collocation: [500, 1500]
+    calving_front: [200, 200]
+    # 500 interface-matching points, drawn without replacement from the
+    # grounding line's x_md (632 points after the data-build resample).
+    matching: 500
+
+model:
+  workflow: xpinn
+  regions:
+    - index: 0
+      kind: grounded
+    - index: 1
+      kind: floating
+  network:
+    depth: 6
+    width: 30
+
+equation:
+  name: ssa_iso
+
+loss:
+  name: joint_inversion
+  matching: true
+  calving_front: true
+  use_gpinn: false
+  active_regions: [0, 1]
+
+training:
+  seed: 8132002
+  global_weights:
+    data: 1.0
+    equation: 0.01
+    calving_front: 0.05
+    matching: 1.0
+    gpinn: 0.0
+    mu_gradient: 0.0
+  stages:
+    - optimizer:
+        name: kfac
+        learning_rate: null
+        damping: .nan
+        parameters:
+          preset: xpinn_joint_inversion_reference
+          log_rate: 5
+          interface_points: all
+          active_regions: [0, 1]
+      iterations: 20
+      adaptive_sampling: true
+      adaptive_sampling_burn_in: 5
+      adaptive_sampling_period: 5
+
+artifacts:
+  output_dir: ../AmeryLambert_kfac_RAD_smoke

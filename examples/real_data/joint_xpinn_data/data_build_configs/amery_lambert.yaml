@@ -56,11 +56,14 @@ floating_region_kwargs:
   margin_km: 15.0
   taper_km: 0.0
 
-# Resample the (ordered, measures_boundaries_2008) grounding line so no
-# two consecutive points are more than 500m apart — its native ~54-point
-# resolution otherwise overshoots the nominal buffer radius near vertices
-# in ols_d (see ../HANDOFF.md).
-grounding_line_resample_m: 500.0
+# Resample the (ordered, measures_boundaries_2008) grounding line to an even
+# arc-length spacing before use. Set fine enough (~40m over Lambert's ~25km
+# flow-filtered trunk) that the reported grounding line x_md/y_md has >=500
+# points, so a joint-inversion workflow can draw 500 interface-matching
+# points per step (the matching sampler draws without replacement, so
+# matching count <= number of x_md points). Also tightens ols_d's
+# near-vertex overshoot vs the old 500m spacing (see ../HANDOFF.md).
+grounding_line_resample_m: 40.0
 
 # Exclude near-stagnant grounded ice (e.g. near the ice divide) from the
 # grounded region's training data — only keep points flowing faster than

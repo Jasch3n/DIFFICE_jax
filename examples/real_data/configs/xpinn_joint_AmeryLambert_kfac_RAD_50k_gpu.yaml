@@ -1,0 +1,87 @@
+# Amery / Lambert joint inversion (real data), GPU (CUDA).
+# KFAC, 50k iterations, RAD adaptive collocation sampling, no gPINN.
+# Collocation points per step: 500 (grounded) / 1500 (floating).
+# Identical to the CPU config except the runtime platform (and the optional
+# persistent compile cache below).
+name: xpinn_joint_AmeryLambert_kfac_RAD_50k_gpu
+workflow: joint_inversion
+
+runtime:
+  jax_platform: cuda
+  # Optional persistent XLA compilation cache (GPU only): speeds up repeated
+  # runs. Prefer exporting JAX_COMPILATION_CACHE_DIR in your job script over
+  # hardcoding a machine-specific path here. To enable in-config instead,
+  # uncomment and point at a writable directory on your cluster:
+  # jax_compilation_cache_dir: /path/to/Cache_jax
+  # jax_enable_compilation_cache: true
+  # jax_persistent_cache_min_compile_time_secs: 0
+  # jax_persistent_cache_min_entry_size_bytes: -1
+
+data:
+  source: ../joint_xpinn_data/output/Amery_Lambert_100km/Amery_Lambert_100km.mat
+  # gPINN is off, so interface_collocation is unused; kept for schema/parity.
+  interface_collocation:
+    library_size: 600
+    sample_count: 600
+  sampling_counts:
+    velocity_data: [1028, 1028]
+    thickness_data: [1028, 1028]
+    # Surface data is sampled independently from thickness data, without
+    # replacement, so the count must not exceed a region's own surface-point
+    # count. The grounded region has only ~640 (sparse BEDMAP1 coverage), so
+    # its count is capped below that.
+    surface_data: [512, 1028]
+    # Collocation points drawn from each region's library per step:
+    # [grounded, floating]. The build's libraries (~1015 / ~9322 points for
+    # Amery/Lambert) are large enough for these counts.
+    collocation: [500, 1500]
+    calving_front: [500, 500]
+    matching: 500
+
+model:
+  workflow: xpinn
+  regions:
+    - index: 0
+      kind: grounded
+    - index: 1
+      kind: floating
+  network:
+    depth: 6
+    width: 30
+
+equation:
+  name: ssa_iso
+
+loss:
+  name: joint_inversion
+  matching: true
+  calving_front: true
+  use_gpinn: false
+  active_regions: [0, 1]
+
+training:
+  seed: 8132002
+  global_weights:
+    data: 1.0
+    equation: 0.01
+    calving_front: 0.05
+    matching: 1.0
+    gpinn: 0.0
+    mu_gradient: 0.0
+  stages:
+    - optimizer:
+        name: kfac
+        learning_rate: null
+        damping: .nan
+        parameters:
+          preset: xpinn_joint_inversion_reference
+          log_rate: 200
+          interface_points: all
+          active_regions: [0, 1]
+      iterations: 50000
+      adaptive_sampling: true
+      adaptive_sampling_burn_in: 1500
+      adaptive_sampling_period: 50
+
+artifacts:
+  output_dir: ../AmeryLambert_kfac_RAD_50k_gpu

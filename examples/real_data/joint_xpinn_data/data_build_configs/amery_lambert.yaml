@@ -66,3 +66,14 @@ grounding_line_resample_m: 500.0
 # grounded region's training data — only keep points flowing faster than
 # this.
 grounded_min_speed_myr: 100.0
+
+# Collocation library (xcol/ycol): an independent, density-controlled
+# two-tier Halton sample instead of reusing the velocity data points, so the
+# physics-residual points concentrate near the interfaces (grounding line +
+# calving front) where the flow structure is sharpest. The band within
+# interface_band_km of the interfaces holds interface_density; the rest holds
+# density. See utils/collocation.py.
+collocation:
+  density: 0.4            # pts/km^2 over the whole region
+  interface_density: 2.0  # pts/km^2 within interface_band_km of the interfaces
+  interface_band_km: 5    # half-width (km) of the near-interface band

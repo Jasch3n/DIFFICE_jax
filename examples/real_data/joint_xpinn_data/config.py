@@ -116,6 +116,19 @@ class PipelineConfig:
     # instead — see floating_region.py.
     floating_region_source: str = "whole_shelf"
 
+    # Collocation library (xcol/ycol) sampling. Empty (default) keeps the
+    # historical behavior: xcol/ycol = the velocity data points (xd/yd). To
+    # decouple the collocation library from data density, set:
+    #   collocation:
+    #     density: 0.5           # pts/km^2 over the whole region (base tier)
+    #     interface_density: 2.0 # pts/km^2 in a band around the interfaces
+    #     interface_band_km: 10  # half-width (km) of that band (GL + front)
+    # Two-tier low-discrepancy (Halton) sampling, partitioned so each
+    # subregion has exactly its stated density — see utils/collocation.py.
+    # Only `density` is required when the block is present; interface_density
+    # defaults to density (no boost) and interface_band_km defaults to 10.
+    collocation: dict = field(default_factory=dict)
+
     paths: dict = field(default_factory=lambda: dict(DEFAULT_PATHS))
 
     # Extra kwargs forwarded verbatim to the chosen source-processing

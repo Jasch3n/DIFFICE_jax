@@ -125,6 +125,21 @@ buffer_km: 100
 # utils/geometry_utils.resample_geometry/order_counterclockwise.
 # grounding_line_resample_m: 500.0
 
+# Collocation library (xcol/ycol) — the pool of physics-residual points
+# DIFFICE_jax samples from at train time. Omitted (default) = the velocity
+# data points (xcol/ycol = xd/yd), so library size is tied to data density.
+# Set this block to decouple them: an independent, density-controlled
+# two-tier low-discrepancy (Halton) sample inside each region, denser near
+# the interfaces. `density` is required; `interface_density` defaults to
+# `density` (no boost) and `interface_band_km` to 10. The band (within
+# interface_band_km of the grounding line, plus the calving front for the
+# floating region) holds exactly interface_density; the rest holds density.
+# Deterministic — no seed needed. See utils/collocation.py.
+# collocation:
+#   density: 0.5            # pts/km^2 over the whole region
+#   interface_density: 2.0  # pts/km^2 within interface_band_km of the interfaces
+#   interface_band_km: 10   # half-width (km) of that band
+
 # --- Optional: per-source tuning knobs, forwarded verbatim to the chosen
 # provider function (see its signature for what it accepts) ---
 
@@ -141,7 +156,9 @@ buffer_km: 100
 # --- Optional: override specific file paths (rare — only needed if
 # pointing at a different version of a dataset, e.g. BedMachine v4
 # instead of v3). Only the keys you list here are overridden; everything
-# else still comes from DEFAULT_PATHS. ---
+# else still comes from DEFAULT_PATHS. To relocate the whole data root to
+# another machine, set the DIFFICE_DATA_ROOT environment variable instead
+# (config.py reads it); use `paths:` only for per-file overrides. ---
 
 # paths:
-#   bedmachine: /Users/jiapchen/Research/Data/BedMachineAntarctica-v4.nc
+#   bedmachine: /path/to/Data/BedMachineAntarctica-v4.nc  # literal path; not env-expanded

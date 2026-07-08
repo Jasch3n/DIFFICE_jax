@@ -53,6 +53,7 @@ from joint_xpinn_data.contracts import Geometry, PointObservations
 from joint_xpinn_data.data_sources import surface, thickness, velocity
 from joint_xpinn_data.domain import DomainRegions, build_regions
 from joint_xpinn_data.resample import nearest_sample
+from joint_xpinn_data.utils import collocation
 from joint_xpinn_data.utils.raster_utils import boundary_indices, largest_connected_component
 
 REGION_LABELS = ["grounded", "floating"]
@@ -284,7 +285,15 @@ def _build_region(config: PipelineConfig, regions: DomainRegions, polygon, is_gr
     else:
         xd_s, yd_s, sd = sparse_surf.x, sparse_surf.y, sparse_surf.values["surface"]
 
-    xcol, ycol = xd, yd  # dense collocation = data points; swap in a denser/independent sample later if needed
+    # Collocation library (xcol/ycol). By default it is the velocity data
+    # points (xd/yd). When the config sets a `collocation` block, sample an
+    # independent, density-controlled two-tier Halton library inside this
+    # region instead (denser near the GL/front) — see utils/collocation.py.
+    coll_settings = collocation.collocation_settings(config)
+    if coll_settings is None:
+        xcol, ycol = xd, yd
+    else:
+        xcol, ycol = collocation.sample_collocation(regions, polygon, is_grounded, coll_settings)
 
     gl_points = regions.grounding_line.all_points()
     ols_d = _signed_distance_to_gl(xd, yd, gl_points, sign=1.0 if is_grounded else -1.0)

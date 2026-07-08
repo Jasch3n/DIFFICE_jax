@@ -37,9 +37,9 @@ from joint_xpinn_data.config import load_config
 BASELINE_DIR = Path(__file__).parent / "baselines"
 
 REFERENCE_CONFIGS = [
-    "joint_xpinn_data/configs/amery_lambert.yaml",
-    "joint_xpinn_data/configs/amery_mellor.yaml",
-    "joint_xpinn_data/configs/amery_fisher.yaml",
+    "joint_xpinn_data/data_build_configs/amery_lambert.yaml",
+    "joint_xpinn_data/data_build_configs/amery_mellor.yaml",
+    "joint_xpinn_data/data_build_configs/amery_fisher.yaml",
 ]
 
 # shapely's MultiPoint.buffer() tessellates circles with some noise

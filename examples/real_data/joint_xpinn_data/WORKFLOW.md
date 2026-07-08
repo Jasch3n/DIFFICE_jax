@@ -33,16 +33,16 @@ Note: basin names are the *individual tributary glacier* granularity (Lambert/Me
 
 ### Config-driven (recommended)
 
-Each dataset you want is one YAML file under `joint_xpinn_data/configs/` — `buffer_km` (how far upstream of the grounding line the grounded region extends) and any data-source overrides live there. Copy `configs/TEMPLATE.yaml` for the full list of fields, or one of the existing `configs/amery_*.yaml` files as a starting point.
+Each dataset you want is one YAML file under `joint_xpinn_data/data_build_configs/` — `buffer_km` (how far upstream of the grounding line the grounded region extends) and any data-source overrides live there. Copy `data_build_configs/TEMPLATE.yaml` for the full list of fields, or one of the existing `data_build_configs/amery_*.yaml` files as a starting point.
 
 ```bash
 # build one config
 /Users/jiapchen/.pyenv/versions/3.13.3/envs/Cpu-Diffice-Env/bin/python -m joint_xpinn_data.build_dataset \
-    joint_xpinn_data/configs/amery_lambert.yaml
+    joint_xpinn_data/data_build_configs/amery_lambert.yaml
 
 # build every *.yaml in the directory (TEMPLATE.yaml is skipped)
 /Users/jiapchen/.pyenv/versions/3.13.3/envs/Cpu-Diffice-Env/bin/python -m joint_xpinn_data.build_dataset \
-    joint_xpinn_data/configs/
+    joint_xpinn_data/data_build_configs/
 ```
 
 Output defaults to `joint_xpinn_data/output/<ice_shelf>_<grounding_zone>_<buffer_km>km/<ice_shelf>_<grounding_zone>_<buffer_km>km.mat` (override the root with `--out-dir`) — everything scoped to this (ice_shelf, grounding_zone, buffer_km) triple (the `.mat`, its validation figures, its source-comparison and consistency-check figures) lives together in this one per-config folder.
@@ -131,7 +131,7 @@ Produces 4 PNGs in `<mat's folder>/figures/` (or pass `--out-dir`): regions/grou
 
 # once a config file exists: use it, so any grounding_line_kwargs/calving_front_kwargs it sets are honored
 /Users/jiapchen/.pyenv/versions/3.13.3/envs/Cpu-Diffice-Env/bin/python -m joint_xpinn_data.diagnostics.compare_sources \
-    --config joint_xpinn_data/configs/amery_lambert.yaml
+    --config joint_xpinn_data/data_build_configs/amery_lambert.yaml
 ```
 
 Overlays each registered GL source pair and each front source pair, prints bidirectional nearest-neighbor distance stats (mean/median/max), and saves comparison PNGs into the same per-config `figures/` folder as `plot_validation`. Useful for judging whether two products actually agree before picking one as default, or for understanding how much a boundary moved between two products' epochs. (This particular tool's own GL/front comparisons operate on the raw basin/shelf polygons regardless of `region_strategy`/`floating_region_source` — so for it specifically, `--config` only matters if the shelf sets `grounding_line_kwargs`/`calving_front_kwargs`. Still use `--config` once one exists, for consistency and so this doesn't become another silent gap later.)
@@ -144,7 +144,7 @@ Every registered check (`joint_xpinn_data.checks.CHECKS`) is a subcommand of `di
 
 ```bash
 /Users/jiapchen/.pyenv/versions/3.13.3/envs/Cpu-Diffice-Env/bin/python -m joint_xpinn_data.diagnostics.checks velocity_vs_front \
-    --config joint_xpinn_data/configs/amery_lambert.yaml --search-radius-km 5
+    --config joint_xpinn_data/data_build_configs/amery_lambert.yaml --search-radius-km 5
 ```
 
 Reports the signed distance to the calving front for velocity points within `search_radius_km` (positive = seaward = misfit) and a strict pass/fail (any seaward point at all fails), plus a spatial PNG colored by signed distance. `search_radius_km` only controls which velocity points get pulled in for evaluation — it's not a pass/fail tolerance (the check itself allows zero seaward points, always) and pushing it too far can start pulling in unrelated coastline the front geometry was never tracked to, which can turn a PASS into a FAIL rather than the other way around. Keep it small.
@@ -155,7 +155,7 @@ Note this check will still report FAILED for a systematic front/velocity disagre
 
 ```bash
 /Users/jiapchen/.pyenv/versions/3.13.3/envs/Cpu-Diffice-Env/bin/python -m joint_xpinn_data.diagnostics.checks hydrostatic_equilibrium \
-    --config joint_xpinn_data/configs/amery_lambert.yaml
+    --config joint_xpinn_data/data_build_configs/amery_lambert.yaml
 ```
 
 Purely descriptive by default (no threshold) — `delta` is never exactly zero even for good data, both from measurement noise and firn's lower density near the surface (not modeled by this two-density formula). Pass `--threshold-kgm2` once you've decided what an acceptable residual looks like empirically. Reports the distribution (mean/median/percentiles) and saves a spatial PNG colored by `delta`, clipped to the 90th percentile of `|delta|` so a handful of extreme outliers (e.g. rock-outcrop/margin sentinel artifacts) don't wash out the pattern.
@@ -164,6 +164,6 @@ Purely descriptive by default (no threshold) — `delta` is never exactly zero e
 
 1. `boundaries.list_names(...)` to confirm exact spelling for the shelf and the tributary/basin you want as the grounding zone.
 2. `compare_sources` (bare `--ice-shelf`/`--grounding-zone`/`--buffer-km` flags — no config file exists yet) to see whether the default GL/front sources agree well enough, before committing to a `buffer_km`.
-3. Write a `joint_xpinn_data/configs/<shelf>_<zone>.yaml` with a first-guess `buffer_km` and build it.
+3. Write a `joint_xpinn_data/data_build_configs/<shelf>_<zone>.yaml` with a first-guess `buffer_km` and build it.
 4. `plot_validation` on the result — check the grounded-region shape looks like a sensible glacier corridor (not implausibly tiny/huge) and the calving front only covers the true open-ocean-facing arc.
-5. Run both `checks` subcommands **with `--config joint_xpinn_data/configs/<shelf>_<zone>.yaml`** to see how much near-front data is ambiguous and how well thickness/surface satisfy flotation, and decide whether to act on either before training. Using bare flags here instead is a real risk, not just a style choice, for any shelf whose config sets `region_strategy`, `floating_region_source`, or other non-default region-building fields — see step 4's note above.
+5. Run both `checks` subcommands **with `--config joint_xpinn_data/data_build_configs/<shelf>_<zone>.yaml`** to see how much near-front data is ambiguous and how well thickness/surface satisfy flotation, and decide whether to act on either before training. Using bare flags here instead is a real risk, not just a style choice, for any shelf whose config sets `region_strategy`, `floating_region_source`, or other non-default region-building fields — see step 4's note above.

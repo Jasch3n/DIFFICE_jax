@@ -128,7 +128,7 @@ class PipelineConfig:
 
 
 def load_config(path: str | Path) -> PipelineConfig:
-    """Build a PipelineConfig from a YAML file — see configs/TEMPLATE.yaml
+    """Build a PipelineConfig from a YAML file — see data_build_configs/TEMPLATE.yaml
     for every available field.
 
     `ice_shelf`, `grounding_zone`, and `buffer_km` are required; everything

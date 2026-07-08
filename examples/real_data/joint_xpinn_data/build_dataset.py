@@ -303,12 +303,17 @@ def _build_region(config: PipelineConfig, regions: DomainRegions, polygon, is_gr
     x_sub, y_sub, gu, gv, accepted, outer_ocean = _accepted_velocity_mask(config, regions, polygon, is_grounded)
     xdir, ydir, udir, vdir = _dirichlet_from_mask(x_sub, y_sub, gu, gv, accepted, exclude, outer_ocean=outer_ocean)
 
+    # xct/yct must be column vectors (N, 1), matching MISMIP's MATLAB-authored
+    # convention: DIFFICE_jax's preprocessing hstacks them directly (unlike
+    # xd/yd/etc., which it flattens before use), so a (1, N) row vector —
+    # scipy.io.savemat's default orientation for a 1-D array — silently
+    # produces a garbled (1, 2N) X_ct instead of the intended (N, 2).
     if is_grounded:
-        xct, yct, nnct = np.zeros(0), np.zeros(0), np.zeros((0, 2))
+        xct, yct, nnct = np.zeros((0, 1)), np.zeros((0, 1)), np.zeros((0, 2))
     else:
         segs, normals = regions.calving_front.segments, regions.calving_front_normals
-        xct = np.concatenate([s[:, 0] for s in segs]) if segs else np.zeros(0)
-        yct = np.concatenate([s[:, 1] for s in segs]) if segs else np.zeros(0)
+        xct = (np.concatenate([s[:, 0] for s in segs]) if segs else np.zeros(0)).reshape(-1, 1)
+        yct = (np.concatenate([s[:, 1] for s in segs]) if segs else np.zeros(0)).reshape(-1, 1)
         nnct = np.concatenate(normals, axis=0) if normals else np.zeros((0, 2))
 
     return dict(
@@ -352,6 +357,18 @@ def build_dataset(config: PipelineConfig) -> dict:
     ]
 
     gl_points = regions.grounding_line.all_points()
+    # x_md/y_md must be object-dtype "cell" arrays (one cell per interface,
+    # matching MISMIP's MATLAB-authored convention) so DIFFICE_jax's loader
+    # indexes them as data['x_md'][0, idx]. A plain list of one array here
+    # would let numpy silently stack it into a regular (1, N) float array
+    # instead of a cell, since there's only ever one interface for a
+    # 2-region config and numpy only falls back to dtype=object when a
+    # list's elements have inconsistent shapes (true for every *other*
+    # per-region cell field here, which lists one array per region).
+    x_md = np.empty((1, 1), dtype=object)
+    x_md[0, 0] = gl_points[:, 0].reshape(-1, 1)
+    y_md = np.empty((1, 1), dtype=object)
+    y_md[0, 0] = gl_points[:, 1].reshape(-1, 1)
     region_masks = []
     for i in range(2):
         m = np.zeros(len(Xe), dtype=bool)
@@ -375,8 +392,8 @@ def build_dataset(config: PipelineConfig) -> dict:
 
     return dict(
         **data,
-        x_md=[gl_points[:, 0]],
-        y_md=[gl_points[:, 1]],
+        x_md=x_md,
+        y_md=y_md,
         Xe=Xe, Ye=Ye, Xe_h=Xe_h, Ye_h=Ye_h,
         idxcrop=idxcrop, idxcrop_h=idxcrop_h,
         basal_mask=np.array(BASAL_MASK, dtype=float),
@@ -441,7 +458,7 @@ def main() -> None:
         description="Build a two-region training dataset from one YAML config, "
         "or every *.yaml config in a directory."
     )
-    parser.add_argument("config", help="Path to a config .yaml file, or a directory of them (see configs/TEMPLATE.yaml)")
+    parser.add_argument("config", help="Path to a config .yaml file, or a directory of them (see data_build_configs/TEMPLATE.yaml)")
     parser.add_argument("--out-dir", default="joint_xpinn_data/output", help="Directory to save the .mat file(s) in")
     args = parser.parse_args()
 

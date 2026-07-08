@@ -123,14 +123,16 @@ def _sampling_counts(value: Any, workflow: str, public_workflow: str | None = No
 
     velocity = _required_sampling_count(value, "velocity_data")
     thickness = _required_sampling_count(value, "thickness_data")
+    surface = value.get("surface_data", thickness)
     collocation = _required_sampling_count(value, "collocation")
+    if surface is not None and surface != thickness:
+        raise ValueError("Current samplers require surface_data to match thickness_data.")
 
     if workflow == "pinn":
         calving_front = _required_sampling_count(value, "calving_front")
         return jnp.asarray([velocity, thickness, collocation, calving_front], dtype="int32")
 
-    surface = _required_sampling_count(value, "surface_data")
-    counts = [velocity, thickness, surface, collocation]
+    counts = [velocity, thickness, collocation]
     if public_workflow != "joint-inversion-regression":
         counts.append(_required_sampling_count(value, "calving_front"))
         counts.append(_required_sampling_count(value, "matching"))

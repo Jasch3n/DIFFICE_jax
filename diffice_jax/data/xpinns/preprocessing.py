@@ -101,21 +101,6 @@ def _filter_collocation_interfaces(x:ArrayLike, y:ArrayLike, interfaces, buffer_
     for x_if, y_if in interfaces:
         keep = keep & (_distance_to_interface_sq(x, y, x_if, y_if) >= buffer_m**2)
     return x[keep], y[keep]
-
-def _surface_position(data, idx, sraw):
-    if 'xd_s' not in data or 'yd_s' not in data:
-        raise ValueError(
-            f"XPINN surface observation grid requires `sd`, `xd_s`, and `yd_s` per subregion; "
-            f"region {idx} is missing `xd_s` or `yd_s`."
-        )
-    xraw_s = data['xd_s'][0, idx]
-    yraw_s = data['yd_s'][0, idx]
-    if sraw.size != xraw_s.size or sraw.size != yraw_s.size:
-        raise ValueError(
-            f"XPINN surface observation grid requires `sd`, `xd_s`, and `yd_s` per subregion; "
-            f"region {idx} shapes are sd={sraw.shape}, xd_s={xraw_s.shape}, yd_s={yraw_s.shape}."
-        )
-    return xraw_s, yraw_s
     
 def calc_sub_scale(x:ArrayLike, y:ArrayLike, u:ArrayLike, v:ArrayLike, h:ArrayLike, s:ArrayLike, 
                    basal=False, gamma_c=0.5, gamma_mu=0.5) -> Tuple[DataMean, DataRange, DynamicScale]:
@@ -295,7 +280,6 @@ def normalize_each(data, idx, ng, basal=False, use_regression=False, forward_mod
     yraw_h = data['yd_h'][0, idx]  # unit [m] position
     hraw = data['hd'][0, idx]  # unit [m] ice thickness
     sraw = data['sd'][0, idx]
-    xraw_s, yraw_s = _surface_position(data, idx, sraw)
     
     # [NOTE]: 3/13/2026 added collocation points as a requirement for incoming datasets 
     xcolraw = data['xcol'][0, idx] # unit [m] position of collocation points
@@ -375,8 +359,6 @@ def normalize_each(data, idx, ng, basal=False, use_regression=False, forward_mod
     x0_h = xraw_h.flatten()
     y0_h = yraw_h.flatten()
     h0 = hraw.flatten()
-    x0_s = xraw_s.flatten()
-    y0_s = yraw_s.flatten()
     s0 = sraw.flatten()
 
     # remove the nan value in the velocity data
@@ -397,10 +379,7 @@ def normalize_each(data, idx, ng, basal=False, use_regression=False, forward_mod
     x_h = x0_h[idxval_h, None]
     y_h = y0_h[idxval_h, None]
     h = h0[idxval_h, None]
-    idxval_s = jnp.where(jnp.isfinite(s0) & jnp.isfinite(x0_s) & jnp.isfinite(y0_s))[0]
-    x_s = x0_s[idxval_s, None]
-    y_s = y0_s[idxval_s, None]
-    s = s0[idxval_s, None]
+    s = s0[idxval_h, None]
 
     subscale_result = calc_sub_scale(x, y, u, v, h, s, basal=basal)
     data_mean, data_range, dynamic_scale = subscale_result
@@ -424,8 +403,6 @@ def normalize_each(data, idx, ng, basal=False, use_regression=False, forward_mod
     xh_n = (x_h - data_mean.x_mean) / data_range.x_range
     yh_n = (y_h - data_mean.y_mean) / data_range.y_range
     h_n = (h) / data_mean.h_mean
-    xs_n = (x_s - data_mean.x_mean) / data_range.x_range
-    ys_n = (y_s - data_mean.y_mean) / data_range.y_range
     s_n = (s - data_mean.s_mean) / data_range.s_range
 
     if basal and grounded_only_interface_mu_ct and bd_mu_raw is not None:
@@ -451,16 +428,15 @@ def normalize_each(data, idx, ng, basal=False, use_regression=False, forward_mod
         data_norm.append(C_n)
 
     # group the nan info of original data
-    idxval_all = [idxval_u, idxval_h, idxval_s]
+    idxval_all = [idxval_u, idxval_h]
     # group the shape info of original data
-    dsize_all = [uraw.shape, hraw.shape, sraw.shape]
+    dsize_all = [uraw.shape, hraw.shape]
 
     # gathering all the data information
     data_info = [data_mean, data_range, data_norm, data_raw, idxval_all, dsize_all, subscale_result]
 
     # group the input and output into matrix
-    X_star = [jnp.hstack((x_n, y_n)), jnp.hstack((xh_n, yh_n)),
-              jnp.hstack((xcol_n, ycol_n)), jnp.hstack((xs_n, ys_n))]
+    X_star = [jnp.hstack((x_n, y_n)), jnp.hstack((xh_n, yh_n)), jnp.hstack((xcol_n, ycol_n))]
     X_ct = jnp.hstack((xct_n, yct_n))
     X_md = jnp.hstack((xmd_n, ymd_n))
 

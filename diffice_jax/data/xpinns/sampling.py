@@ -21,7 +21,6 @@ class DataSample(NamedTuple):
     S_smp: ArrayLike 
     Mu_smp: ArrayLike 
     C_smp: ArrayLike
-    Xs_smp: ArrayLike = None
     
 def eval_RAD_probs(X_col_all, idxgall, basal_mask, eval_f, return_diagnostics=False):
     # RAD pdf with k=2 and c=1 (see Wu et al. 2023)
@@ -140,14 +139,6 @@ def sample_interface_collocation(keys, X_interface_lib):
         X_interface.append(X_lib[idx])
     return X_interface
 
-def _xpinn_count_slots(n_pt, has_surface_count):
-    if has_surface_count:
-        return 0, 1, 2, 3, 4, 5
-    return 0, 1, 1, 2, 3, 4
-
-def _surface_points(X_item):
-    return X_item[3] if len(X_item) > 3 else X_item[1]
-
 def data_sample_create(data_all, idxgall:ArrayLike, n_pt: ArrayLike, basal_mask=None, use_regression=False):
     # obtain the number of sub-group
     ng = len(idxgall)
@@ -170,9 +161,7 @@ def data_sample_create(data_all, idxgall:ArrayLike, n_pt: ArrayLike, basal_mask=
     
     n_pt_norm = []
     
-    has_surface_count = len(n_pt) >= 6
-    vel_slot, h_slot, s_slot, col_slot, bd_slot, md_slot = _xpinn_count_slots(n_pt, has_surface_count)
-    expected_lens = [ng, ng, ng, ng, ng, max(ng-1, 1)] if has_surface_count else [ng, ng, ng, ng, max(ng-1, 1)]
+    expected_lens = [ng, ng, ng, ng, max(ng-1, 1), ng] 
     # n_pt input might be array or list.
     # We will convert to valid list of lists.
     
@@ -230,7 +219,6 @@ def data_sample_create(data_all, idxgall:ArrayLike, n_pt: ArrayLike, basal_mask=
     idx_data = tree_map(lambda x: jnp.arange(X_star[x][0].shape[0]), idxgall)
     # create the index of thickness data points within all sub-regions
     idxh_data = tree_map(lambda x: jnp.arange(X_star[x][1].shape[0]), idxgall)
-    idxs_data = tree_map(lambda x: jnp.arange(_surface_points(X_star[x]).shape[0]), idxgall)
     # create the index of collocation points within all sub-regions
     idx_col_data = tree_map(lambda x: jnp.arange(X_star[x][2].shape[0]), idxgall)
     # create the index of data points for all sub-regions at the calving front
@@ -245,18 +233,18 @@ def data_sample_create(data_all, idxgall:ArrayLike, n_pt: ArrayLike, basal_mask=
         _, *keys = random.split(key, 5*ng + 1)
 
         # sampling the velocity data point based on the index
-        idx_smp = tree_map(lambda x, y, n: random.choice(x, y, [n], replace=False), keys[0:ng], idx_data, n_pt[vel_slot])
+        idx_smp = tree_map(lambda x, y, n: random.choice(x, y, [n], replace=False), keys[0:ng], idx_data, n_pt[0])
         X_smp = tree_map(lambda x, y: X_star[x][0][y], idxgall, idx_smp)
         U_smp = tree_map(lambda x, y: U_star[x][0][y], idxgall, idx_smp)
 
         # sampling the thickness data point based on the index
-        idxh_smp = tree_map(lambda x, y, n: random.choice(x, y, [n], replace=False), keys[0:ng], idxh_data, n_pt[h_slot])
+        idxh_smp = tree_map(lambda x, y, n: random.choice(x, y, [n], replace=False), keys[0:ng], idxh_data, n_pt[1])
         Xh_smp = tree_map(lambda x, y: X_star[x][1][y], idxgall, idxh_smp)
         H_smp = tree_map(lambda x, y: U_star[x][1][y], idxgall, idxh_smp)
 
-        idxs_smp = tree_map(lambda x, y, n: random.choice(x, y, [n], replace=False), keys[0:ng], idxs_data, n_pt[s_slot])
-        Xs_smp = tree_map(lambda x, y: _surface_points(X_star[x])[y], idxgall, idxs_smp)
-        S_smp = tree_map(lambda x, y: U_star[x][2][y], idxgall, idxs_smp)
+        # sampling the surface elevation data for basal regions (same indices as thickness)
+        # U_star[x] has 3 elements [uv, h, s] for basal, 2 [uv, h] for floating
+        S_smp = tree_map(lambda x, y: U_star[x][2][y], idxgall, idxh_smp)
         
         if use_regression:
             Mu_smp = tree_map(lambda x, y: U_star[x][3][y], idxgall, idx_smp)
@@ -273,7 +261,7 @@ def data_sample_create(data_all, idxgall:ArrayLike, n_pt: ArrayLike, basal_mask=
             random.choice(
                 keys[ng + pos],
                 idx_col_data[pos],
-                [n_pt[col_slot][pos]],
+                [n_pt[2][pos]],
                 p=None if probs is None else probs[pos],
                 replace=True
             )
@@ -284,30 +272,30 @@ def data_sample_create(data_all, idxgall:ArrayLike, n_pt: ArrayLike, basal_mask=
         X_col = append_interface_collocation(X_col, X_interface_col)
 
         # Generate a random index of the data at ice front
-        idx_cbd = tree_map(lambda x, y, n: random.choice(x, y, [n]), keys[(2*ng):(3*ng)], idx_bd, n_pt[bd_slot])
+        idx_cbd = tree_map(lambda x, y, n: random.choice(x, y, [n]), keys[(2*ng):(3*ng)], idx_bd, n_pt[3])
         # For regions with empty boundary data (grounded), create zero-filled placeholders
         def safe_bd_sample(xct, idx, n):
             if xct.shape[0] == 0:
                 return jnp.zeros((n, xct.shape[1]))
             return xct[idx]
-        X_bd = tree_map(lambda x, y, n: safe_bd_sample(X_ct[x], y, n), idxgall, idx_cbd, n_pt[bd_slot])
+        X_bd = tree_map(lambda x, y, n: safe_bd_sample(X_ct[x], y, n), idxgall, idx_cbd, n_pt[3])
         
         def safe_nn_sample(nnct, idx, n):
             if nnct.shape[0] == 0:
                 return jnp.zeros((n, nnct.shape[1]))
             return nnct[idx]
-        nn_bd = tree_map(lambda x, y, n: safe_nn_sample(nn_ct[x], y, n), idxgall, idx_cbd, n_pt[bd_slot])
+        nn_bd = tree_map(lambda x, y, n: safe_nn_sample(nn_ct[x], y, n), idxgall, idx_cbd, n_pt[3])
 
         # generate a random index of the data at matching boundary
-        idx_mbd = tree_map(lambda x, y, n: random.choice(x, y, [n], replace=False), keys[(3*ng):(4*ng-1)], idx_md, n_pt[md_slot])
+        idx_mbd = tree_map(lambda x, y, n: random.choice(x, y, [n], replace=False), keys[(3*ng):(4*ng-1)], idx_md, n_pt[4])
         # sampling the data point based on the index
         X_mbd = tree_map(lambda x, y: X_md[x][y], idxgall[0:-1], idx_mbd)
 
         # group all the data and collocation points
         if use_regression:
-            sample = DataSample(X_smp, U_smp, Xh_smp, H_smp, S_smp, Mu_smp, C_smp, Xs_smp)
+            sample = DataSample(X_smp, U_smp, Xh_smp, H_smp, S_smp, Mu_smp, C_smp)
         else:
-            sample = DataSample(X_smp, U_smp, Xh_smp, H_smp, S_smp, [], [], Xs_smp)
+            sample = DataSample(X_smp, U_smp, Xh_smp, H_smp, S_smp, [], [])
             
         data = dict(smp=sample, col=[X_col],  bd=[X_bd, nn_bd], md=[X_mbd])
         if rad_diagnostics is not None:
@@ -352,11 +340,8 @@ def data_regression_sample_create(data_all, idxgall:ArrayLike, n_pt: ArrayLike, 
     # create the index of velocity data points within all sub-regions
     idx_data = tree_map(lambda x: jnp.arange(X_star[x][0].shape[0]), idxgall)
     idxh_data = tree_map(lambda x: jnp.arange(X_star[x][1].shape[0]), idxgall)
-    idxs_data = tree_map(lambda x: jnp.arange(_surface_points(X_star[x]).shape[0]), idxgall)
     idx_col_data = tree_map(lambda x: jnp.arange(X_star[x][2].shape[0]), idxgall)
-    has_surface_count = len(n_pt) >= 4
-    vel_slot, h_slot, s_slot, col_slot, _, _ = _xpinn_count_slots(n_pt, has_surface_count)
-    n_col = n_pt[col_slot] if len(n_pt) > col_slot else n_pt[vel_slot]
+    n_col = n_pt[2] if len(n_pt) > 2 else n_pt[0]
 
     # define the function that can re-sampling for each calling
     def dataf(key, eval_adaptive=None, eval_f=None):
@@ -364,18 +349,18 @@ def data_regression_sample_create(data_all, idxgall:ArrayLike, n_pt: ArrayLike, 
         _, *keys = random.split(key, 5*ng + 1)
 
         # sampling the velocity data point based on the index
-        idx_smp = tree_map(lambda x, y, n: random.choice(x, y, [n], replace=False), keys[0:ng], idx_data, n_pt[vel_slot])
+        idx_smp = tree_map(lambda x, y, n: random.choice(x, y, [n], replace=False), keys[0:ng], idx_data, n_pt[0])
         X_smp = tree_map(lambda x, y: X_star[x][0][y], idxgall, idx_smp)
         U_smp = tree_map(lambda x, y: U_star[x][0][y], idxgall, idx_smp)
 
         # sampling the thickness data point based on the index
-        idxh_smp = tree_map(lambda x, y, n: random.choice(x, y, [n], replace=False), keys[0:ng], idxh_data, n_pt[h_slot])
+        idxh_smp = tree_map(lambda x, y, n: random.choice(x, y, [n], replace=False), keys[0:ng], idxh_data, n_pt[1])
         Xh_smp = tree_map(lambda x, y: X_star[x][1][y], idxgall, idxh_smp)
         H_smp = tree_map(lambda x, y: U_star[x][1][y], idxgall, idxh_smp)
 
-        idxs_smp = tree_map(lambda x, y, n: random.choice(x, y, [n], replace=False), keys[0:ng], idxs_data, n_pt[s_slot])
-        Xs_smp = tree_map(lambda x, y: _surface_points(X_star[x])[y], idxgall, idxs_smp)
-        S_smp = tree_map(lambda x, y: U_star[x][2][y], idxgall, idxs_smp)
+        # sampling the surface elevation data for basal regions (same indices as thickness)
+        # U_star[x] has 3 elements [uv, h, s] for basal, 2 [uv, h] for floating
+        S_smp = tree_map(lambda x, y: U_star[x][2][y], idxgall, idxh_smp)
         
         Mu_smp = tree_map(lambda x, y: U_star[x][3][y], idxgall, idx_smp)
         C_smp  = tree_map(lambda x, y: U_star[x][4][y], idxgall, idx_smp)
@@ -383,7 +368,7 @@ def data_regression_sample_create(data_all, idxgall:ArrayLike, n_pt: ArrayLike, 
         # jdb.print('[DEBUG]: Region 1 Avg C_smp = {s}', s=jnp.mean(C_smp[1]))
         # jdb.print('[DEBUG]: Region 2 Avg C_smp = {s}', s=jnp.mean(C_smp[2]))
         
-        sample = DataSample(X_smp, U_smp, Xh_smp, H_smp, S_smp, Mu_smp, C_smp, Xs_smp)
+        sample = DataSample(X_smp, U_smp, Xh_smp, H_smp, S_smp, Mu_smp, C_smp)
         
         rad_diagnostics = None
         if eval_adaptive:

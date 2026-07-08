@@ -4,6 +4,7 @@ import json
 import os
 import pickle
 import time
+import warnings
 
 os.environ.setdefault("JAX_PLATFORMS", "cpu")
 os.environ.setdefault("JAX_PLATFORM_NAME", "cpu")
@@ -20,22 +21,6 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib import font_manager
 
-
-ARTIFACT_PREFIX = "test_xpinn_joint_inversion_flatbed"
-C_REL_MAE_MIN_TRUTH = 1e-3
-DEFAULT_FONT_FAMILY = "Noto Sans"
-DEFAULT_FONT_PATH = Path.home() / "Library" / "Fonts" / "NotoSans-Regular.ttf"
-DEFAULT_FONT_DIR = Path.home() / "Library" / "Fonts"
-DEFAULT_FONT_FILES = (
-    "NotoSans-Light.ttf",
-    "NotoSans-Thin.ttf",
-    "NotoSans-ExtraThin.ttf",
-    "NotoSans-Regular.ttf",
-    "NotoSans-Italic.ttf",
-    "NotoSans-Bold.ttf",
-    "NotoSans-BoldItalic.ttf",
-    "NotoSans-ExtraBold.ttf",
-    "NotoSans-ExtraBoldItalic.ttf",
 )
 
 
@@ -136,6 +121,7 @@ def _tripcolor_regions(ax, regions, key, title, cmap, vmin, vmax):
             cmap=cmap,
             vmin=vmin,
             vmax=vmax,
+            mask_long_triangles=True,
         )
     ax.set_title(title)
     ax.set_xlabel("x [km]")
@@ -158,7 +144,6 @@ def save_inversion_comparison(path, mu_regions, c_regions):
     mu_vmax = np.nanpercentile(mu_true, 95)
     c_vmin = np.nanpercentile(c_true, 5) if c_true.size else np.nan
     c_vmax = np.nanpercentile(c_true, 80) if c_true.size else np.nan
-    c_mismatch_vmax = 0.15 if c_mismatch.size else np.nan
     x_min, x_max, y_min, y_max = _domain_bounds(mu_regions)
 
     fig, axs = plt.subplots(3, 2, figsize=(10, 6), sharex=True, sharey=True)
@@ -167,8 +152,8 @@ def save_inversion_comparison(path, mu_regions, c_regions):
         (axs[0, 1], c_regions, "truth", "ground truth basal friction $C$", "cool", c_vmin, c_vmax, "Pa s/m"),
         (axs[1, 0], mu_regions, "pred", "inferred viscosity $\\mu$", "viridis", mu_vmin, mu_vmax, "Pa s"),
         (axs[1, 1], c_regions, "pred", "inferred basal friction $C$", "cool", c_vmin, c_vmax, "Pa s/m"),
-        (axs[2, 0], mu_regions, "mismatch", f"relative absolute error (mean = {100.0 * mu_rel_mae:.2f}%)", "magma", 0.0, 0.15, "|error| / |truth|"),
-        (axs[2, 1], c_regions, "mismatch", f"relative absolute error (mean = {100.0 * c_rel_mae:.2f}%)", "magma", 0.0, c_mismatch_vmax, "|error| / |truth|"),
+        (axs[2, 0], mu_regions, "mismatch", f"relative absolute error (mean = {100.0 * mu_rel_mae:.2f}%)", "magma", 0.0, RELATIVE_ERROR_VMAX, "|error| / |truth|"),
+        (axs[2, 1], c_regions, "mismatch", f"relative absolute error (mean = {100.0 * c_rel_mae:.2f}%)", "magma", 0.0, RELATIVE_ERROR_VMAX, "|error| / |truth|"),
     ]
     for ax, regions, key, title, cmap, lo, hi, label in panels:
         image = _tripcolor_regions(ax, regions, key, title, cmap, lo, hi)
@@ -185,6 +170,54 @@ def save_inversion_comparison(path, mu_regions, c_regions):
     fig.savefig(path, dpi=220)
     plt.close(fig)
     return mu_rel_mae, c_rel_mae
+
+
+def save_data_field_comparison(path, data_regions):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    field_specs = [
+        ("u", "velocity $u$", "m/yr", "viridis"),
+        ("v", "velocity $v$", "m/yr", "viridis"),
+        ("h", "ice thickness $h$", "m", "terrain"),
+        ("s", "surface elevation $s$", "m", "terrain"),
+    ]
+    active_specs = [(key, title, label, cmap) for key, title, label, cmap in field_specs if data_regions.get(key)]
+    if not active_specs:
+        return {}
+
+    stats = {}
+    bounds_regions = [region for key, _, _, _ in active_specs for region in data_regions[key]]
+    x_min, x_max, y_min, y_max = _domain_bounds(bounds_regions)
+    fig, axs = plt.subplots(len(active_specs), 3, figsize=(13, 2.3 * len(active_specs)), sharex=True, sharey=True)
+    axs = np.atleast_2d(axs)
+    for row, (key, title, label, cmap) in enumerate(active_specs):
+        regions = data_regions[key]
+        truth = _concat_region_values(regions, "truth")
+        pred = _concat_region_values(regions, "pred")
+        mismatch = _concat_region_values(regions, "mismatch")
+        rel_mae = _field_stats(pred, truth)
+        stats[f"{key}_rel_mae"] = rel_mae
+        vmin = np.nanpercentile(truth, 5)
+        vmax = np.nanpercentile(truth, 95)
+        panels = [
+            (axs[row, 0], "truth", f"ground truth {title}", cmap, vmin, vmax, label),
+            (axs[row, 1], "pred", f"XPINN-predicted {title}", cmap, vmin, vmax, label),
+            (axs[row, 2], "mismatch", f"relative absolute error (mean = {100.0 * rel_mae:.2f}%)", "magma", 0.0, RELATIVE_ERROR_VMAX, "|error| / |truth|"),
+        ]
+        for ax, region_key, panel_title, panel_cmap, lo, hi, colorbar_label in panels:
+            image = _tripcolor_regions(ax, regions, region_key, panel_title, panel_cmap, lo, hi)
+            ax.set_xlim(x_min, x_max)
+            ax.set_ylim(y_min, y_max)
+            ax.set_box_aspect(1 / 3)
+            if image is not None:
+                _add_colorbar(fig, ax, image, colorbar_label)
+    fig.suptitle("Synthetic XPINN Data Field Comparison", fontsize=15, fontweight=800)
+    plt.tight_layout()
+    fig.canvas.draw()
+    for ax in fig.axes:
+        _set_axis_font_weight(ax)
+    fig.savefig(path, dpi=220)
+    plt.close(fig)
+    return stats
 
 
 def _signed_percentile_limit(regions, key="value", percentile=98, floor=1e-12):
@@ -283,10 +316,8 @@ def _plot_paths(plot_dir, tag):
     return dict(
         output=plot_dir / "data.npz",
         fields=plot_dir / "fields.png",
+        data_fields=plot_dir / "data_fields.png",
         loss=plot_dir / "loss.png",
-        equation_residuals=plot_dir / "equation_residuals.png",
-        x_term_ratios=plot_dir / "x_term_ratio.png",
-        cache=plot_dir / "plot_cache.pkl",
     )
 
 
@@ -300,6 +331,7 @@ def _render_plot_cache(cache_path, plot_dir, tag=None):
         cache["mu_regions"],
         cache["c_regions"],
     )
+    data_field_stats = save_data_field_comparison(paths["data_fields"], cache.get("data_field_regions", {}))
     save_equation_residuals(paths["equation_residuals"], cache["residual_regions"])
     save_x_equation_term_ratios(paths["x_term_ratios"], cache["term_regions"], cache["residual_regions"]["x"])
     save_loss_curve(paths["loss"], cache["loss_history"])
@@ -310,12 +342,14 @@ def _render_plot_cache(cache_path, plot_dir, tag=None):
         c_rel_mae=c_rel_mae,
         target_c_rel_mae=np.nan,
         field_comparison_path=str(paths["fields"]),
+        data_field_comparison_path=str(paths["data_fields"]),
         equation_residual_path=str(paths["equation_residuals"]),
         x_term_ratio_path=str(paths["x_term_ratios"]),
         loss_curve_path=str(paths["loss"]),
         plot_cache_path=str(cache_path),
+        **data_field_stats,
     )
-    return paths["output"], paths["fields"], paths["loss"], paths["equation_residuals"], paths["x_term_ratios"], cache_path, mu_rel_mae, c_rel_mae
+    return paths["output"], paths["fields"], paths["data_fields"], paths["loss"], paths["equation_residuals"], paths["x_term_ratios"], cache_path, mu_rel_mae, c_rel_mae
 
 
 def _resolve_solver_dir(config, solver_dir):
@@ -356,13 +390,21 @@ def _warn_if_saved_config_differs(config, solver_dir):
         )
 
 
-def _region_velocity_truth(solver, idx, key):
+def _region_truth(solver, idx, key, index_set):
     raw_data = solver.state.raw_data
     if key not in raw_data:
         return None
     data = solver.state.normalized_data[idx]
-    idxval = np.asarray(jax.device_get(data[4][4][0]), dtype=int).reshape(-1)
+    idxval = np.asarray(jax.device_get(data[4][4][index_set]), dtype=int).reshape(-1)
     return np.asarray(raw_data[key][0, idx]).reshape(-1)[idxval]
+
+
+def _region_velocity_truth(solver, idx, key):
+    return _region_truth(solver, idx, key, 0)
+
+
+def _region_thickness_truth(solver, idx, key):
+    return _region_truth(solver, idx, key, 1)
 
 
 def _field_region(x, y, truth, pred, min_truth=None):
@@ -389,6 +431,7 @@ def _value_region(x, y, value):
 def _prediction_plot_cache(solver, predictions, diagnostics, loss_history, tag, metadata):
     mu_regions = []
     c_regions = []
+    data_field_regions = {"u": [], "v": [], "h": [], "s": []}
     residual_regions = {"x": [], "y": []}
     term_regions = {"term1_1": [], "term12_2": [], "term1_3": [], "term1_4": []}
     scale_by_idx = dict(zip(solver.state.sub_region_indices, solver.state.scales))
@@ -401,10 +444,30 @@ def _prediction_plot_cache(solver, predictions, diagnostics, loss_history, tag, 
         c_pred = np.asarray(jax.device_get(region["C"])).reshape(-1)
         mu_true = _region_velocity_truth(solver, idx, "mud")
         c_true = _region_velocity_truth(solver, idx, "alpha2d")
+        u_true = _region_velocity_truth(solver, idx, "ud")
+        v_true = _region_velocity_truth(solver, idx, "vd")
+        h_true = _region_thickness_truth(solver, idx, "hd")
+        s_true = _region_thickness_truth(solver, idx, "sd")
         if mu_true is not None:
             mu_regions.append(_field_region(x, y, mu_true, mu_pred))
         if c_true is not None and np.isfinite(c_pred).any():
             c_regions.append(_field_region(x, y, c_true, c_pred, min_truth=C_REL_MAE_MIN_TRUTH))
+        if u_true is not None:
+            u_pred = np.asarray(jax.device_get(region["u"])).reshape(-1)
+            data_field_regions["u"].append(_field_region(x, y, u_true, u_pred))
+        if v_true is not None:
+            v_pred = np.asarray(jax.device_get(region["v"])).reshape(-1)
+            data_field_regions["v"].append(_field_region(x, y, v_true, v_pred))
+        if h_true is not None:
+            x_h = np.asarray(jax.device_get(region["x_h"])).reshape(-1)
+            y_h = np.asarray(jax.device_get(region["y_h"])).reshape(-1)
+            h_pred = np.asarray(jax.device_get(region["h_thickness"])).reshape(-1)
+            data_field_regions["h"].append(_field_region(x_h, y_h, h_true, h_pred))
+        if s_true is not None:
+            x_h = np.asarray(jax.device_get(region["x_h"])).reshape(-1)
+            y_h = np.asarray(jax.device_get(region["y_h"])).reshape(-1)
+            s_pred = np.asarray(jax.device_get(region["s_thickness"])).reshape(-1)
+            data_field_regions["s"].append(_field_region(x_h, y_h, s_true, s_pred))
 
     for region in diagnostics["regions"]:
         idx = region["index"]
@@ -436,6 +499,7 @@ def _prediction_plot_cache(solver, predictions, diagnostics, loss_history, tag, 
         tag=tag,
         mu_regions=mu_regions,
         c_regions=c_regions,
+        data_field_regions=data_field_regions,
         residual_regions=residual_regions,
         term_regions=term_regions,
         loss_history=np.asarray(loss_history, dtype=float),
@@ -491,13 +555,14 @@ def main():
     parser.add_argument("--tag", default="solver_predict")
     args = parser.parse_args()
 
-    output, fields, loss, residuals, ratios, cache, mu_rel_mae, c_rel_mae = render_from_saved_solver(
+    output, fields, data_fields, loss, residuals, ratios, cache, mu_rel_mae, c_rel_mae = render_from_saved_solver(
         args.config,
         args.solver_dir,
         args.tag,
     )
     print(f"PLOT_OUTPUT={output}")
     print(f"FIELD_COMPARISON={fields}")
+    print(f"DATA_FIELD_COMPARISON={data_fields}")
     print(f"LOSS_CURVE={loss}")
     print(f"EQUATION_RESIDUALS={residuals}")
     print(f"X_TERM_RATIOS={ratios}")

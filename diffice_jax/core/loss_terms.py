@@ -43,7 +43,6 @@ def add_dummy_inverse_targets(data):
         sample.S_smp,
         mu_smp,
         C_smp,
-        sample.Xs_smp,
     )
     return data
 

@@ -47,6 +47,9 @@ def tripcolor_scattered(
     add_colorbar=False,
     colorbar_label=None,
     colorbar_kwargs=None,
+    mask_long_triangles=False,
+    triangle_edge_scale=3.0,
+    max_triangle_edge=None,
     min_points=3,
     **tripcolor_kwargs,
 ):
@@ -71,6 +74,31 @@ def tripcolor_scattered(
             f"points; got {x_plot.size}."
         )
 
+    x_plot = x_plot * coordinate_scale
+    y_plot = y_plot * coordinate_scale
+    plot_args = (x_plot, y_plot, values_plot)
+    if mask_long_triangles:
+        import matplotlib.tri as mtri
+
+        tri = mtri.Triangulation(x_plot, y_plot)
+        xy = np.column_stack((x_plot, y_plot))
+        tri_xy = xy[tri.triangles]
+        edge_lengths = np.stack(
+            (
+                np.linalg.norm(tri_xy[:, 0] - tri_xy[:, 1], axis=1),
+                np.linalg.norm(tri_xy[:, 1] - tri_xy[:, 2], axis=1),
+                np.linalg.norm(tri_xy[:, 2] - tri_xy[:, 0], axis=1),
+            ),
+            axis=1,
+        )
+        edge_limit = max_triangle_edge
+        if edge_limit is None:
+            edge_limit = triangle_edge_scale * np.nanmedian(edge_lengths)
+        mask_tri = np.nanmax(edge_lengths, axis=1) > edge_limit
+        if np.any(~mask_tri):
+            tri.set_mask(mask_tri)
+            plot_args = (tri, values_plot)
+
     with warnings.catch_warnings():
         warnings.filterwarnings(
             "ignore",
@@ -78,9 +106,7 @@ def tripcolor_scattered(
             category=RuntimeWarning,
         )
         image = ax.tripcolor(
-            x_plot * coordinate_scale,
-            y_plot * coordinate_scale,
-            values_plot,
+            *plot_args,
             shading=shading,
             cmap=cmap,
             vmin=vmin,

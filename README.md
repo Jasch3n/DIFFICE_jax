@@ -72,7 +72,8 @@ When called with a YAML config, `run_inversion.py`:
 3. prints dataset and batch point counts for velocity, thickness, surface, collocation, calving-front, and interface data;
 4. builds a `DIFFICESolver` from the `data`, `model`, `equation`, `loss`, and `training` sections;
 5. runs each optimizer stage in order;
-6. saves solver artifacts unless `--no-save` is passed.
+6. saves solver artifacts unless `--no-save` is passed;
+7. renders the standard XPINN figure set into `<output_dir>/plots` unless `--no-plot` is passed (automatically skipped for `--no-save` runs and non-XPINN workflows).
 
 Relative paths in the YAML file are resolved relative to the directory containing that YAML file.  For example, a
 config stored in `examples/synthetic_data/configs/` should refer to the flatbed dataset as:
@@ -124,3 +125,4 @@ The behavior in DIFFICE v1.0 can be recovered by specifying `workflow: ice-shelf
 - Current samplers require `surface_data` to match `thickness_data` when surface data are used.
 - KFAC runs should use the CPU or GPU environment that has `kfac_jax`; GPU configs should set `runtime.jax_platform: cuda`.
 - Use `--no-save` for build checks, smoke runs, and timing runs where saved artifacts are not needed.
+- Plots are rendered automatically after a saved XPINN run; pass `--no-plot` to skip them, or run `examples/render_solver_xpinn_kfac_plots.py` later to regenerate them from a saved solver directory.

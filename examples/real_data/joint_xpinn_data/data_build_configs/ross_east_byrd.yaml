@@ -45,10 +45,13 @@ region_strategy_kwargs:
   min_speed_myr: 500.0
   corridor_margin_km: 15.0
 
-# BedMachine only for thickness (dense role already defaults to this) —
-# no BEDMAP1/2 concat here yet, unlike the Amery configs.
-dense_thickness_source: bedmachine_v3
-sparse_thickness_source: bedmachine_v3
+# BedMachine v3 for thickness (no BEDMAP1/2 concat here yet, unlike the
+# Amery configs) and for surface elevation — both the default, set
+# explicitly for reproducibility. As a dense grid, BedMachine feeds both
+# the dense (h_dense/s_dense) and sparse (hd/sd) roles resampled onto the
+# velocity grid (xd_h==xd_s==xd) — see build_dataset.
+thickness_source: bedmachine_v3
+surface_source: bedmachine_v3
 
 # Ross East is fed by many outlet glaciers besides Byrd — the whole_shelf
 # default (shelf polygon minus the grounded corridor, same as every Amery

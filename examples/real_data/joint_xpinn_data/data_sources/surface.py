@@ -52,12 +52,10 @@ def _load(config: PipelineConfig, region_polygon, source: str, kwargs: dict) -> 
     return fn(config, region_polygon, **kwargs)
 
 
-def load_dense_surface(config: PipelineConfig, region_polygon) -> PointObservations:
-    """s_dense role — resampled onto the velocity (xd,yd) locations by the caller."""
-    return _load(config, region_polygon, config.dense_surface_source, config.dense_surface_kwargs)
-
-
-def load_sparse_surface(config: PipelineConfig, region_polygon) -> PointObservations:
-    """sd/xd_s/yd_s role — kept at this source's own native locations, not
-    resampled onto the sparse-thickness grid (xd_h/yd_h)."""
-    return _load(config, region_polygon, config.sparse_surface_source, config.sparse_surface_kwargs)
+def load_surface(config: PipelineConfig, region_polygon) -> PointObservations:
+    """The configured surface source. build_dataset._build_region derives
+    BOTH surface output roles from this single PointObservations: s_dense
+    (resampled onto the velocity (xd,yd) grid) and sd/xd_s/yd_s (the
+    source's own native points, independent of the thickness grid — see
+    docs/adr/0001-surface-elevation-independent-coordinates.md)."""
+    return _load(config, region_polygon, config.surface_source, config.surface_kwargs)

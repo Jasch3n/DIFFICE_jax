@@ -14,6 +14,50 @@ def _runtime_env_helper():
     return module
 
 
+def _render_module():
+    module_path = Path(__file__).resolve().parent / "render_solver_xpinn_kfac_plots.py"
+    spec = importlib.util.spec_from_file_location("_diffice_render_plots", module_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _maybe_render_plots(config, result, args):
+    """Render XPINN plots into <output_dir>/plots after a saved run.
+
+    On by default; skipped for --no-plot, --no-save (no output dir), and
+    non-XPINN workflows. A plotting failure never fails a completed run.
+    """
+    if args.no_plot:
+        return
+    if args.no_save or result.output_dir is None:
+        print("PLOTTING_SKIPPED=no-output-dir")
+        return
+    if config.model.get("workflow") != "xpinn":
+        print(f"PLOTTING_SKIPPED=workflow-{config.model.get('workflow')}")
+        return
+    tag = str(config.artifacts.get("tag", config.name))
+    try:
+        render = _render_module()
+        output, fields, data_fields, loss, residuals, ratios, cache, mu_rel_mae, c_rel_mae = (
+            render.render_from_solver(result.solver, config, result.output_dir, tag)
+        )
+        print(f"PLOT_OUTPUT={output}")
+        print(f"FIELD_COMPARISON={fields}")
+        print(f"DATA_FIELD_COMPARISON={data_fields}")
+        print(f"LOSS_CURVE={loss}")
+        print(f"EQUATION_RESIDUALS={residuals}")
+        print(f"X_TERM_RATIOS={ratios}")
+        print(f"PLOT_CACHE={cache}")
+        print(f"MU_REL_MAE={mu_rel_mae:.6f}")
+        print(f"C_REL_MAE={c_rel_mae:.6f}")
+    except Exception as exc:  # plots must never fail an already-completed run
+        import traceback
+
+        print(f"PLOTTING_FAILED={type(exc).__name__}: {exc}")
+        traceback.print_exc()
+
+
 def _preload_runtime(path):
     if path.suffix.lower() in {".yaml", ".yml"}:
         import yaml
@@ -129,6 +173,8 @@ def main():
     parser = argparse.ArgumentParser(description="Run a DIFFICE_jax training workflow from config.")
     parser.add_argument("config", type=Path)
     parser.add_argument("--no-save", action="store_true")
+    parser.add_argument("--no-plot", action="store_true",
+                        help="Skip rendering XPINN plots after a saved run.")
     args = parser.parse_args()
 
     _preload_runtime(args.config)
@@ -151,6 +197,8 @@ def main():
         print(f"WORKFLOW_SECONDS_PER_ITER={seconds_per_iter:.8f}")
     if result.output_dir is not None:
         print(f"WORKFLOW_OUTPUT_DIR={result.output_dir}")
+
+    _maybe_render_plots(config, result, args)
 
 
 if __name__ == "__main__":

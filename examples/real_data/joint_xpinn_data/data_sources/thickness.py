@@ -213,14 +213,10 @@ def _load(config: PipelineConfig, region_polygon, source: str, kwargs: dict) -> 
     return fn(config, region_polygon, **kwargs)
 
 
-def load_dense_thickness(config: PipelineConfig, region_polygon) -> PointObservations:
-    """h_dense role — a dense gridded product, later resampled onto the
-    velocity (xd,yd) locations by the caller. Surface elevation's dense
-    role (s_dense) is a separate, independent fetch — see
-    data_sources/surface.py."""
-    return _load(config, region_polygon, config.dense_thickness_source, config.dense_thickness_kwargs)
-
-
-def load_sparse_thickness(config: PipelineConfig, region_polygon) -> PointObservations:
-    """hd/xd_h/yd_h role — kept at this source's own native locations."""
-    return _load(config, region_polygon, config.sparse_thickness_source, config.sparse_thickness_kwargs)
+def load_thickness(config: PipelineConfig, region_polygon) -> PointObservations:
+    """The configured thickness source. build_dataset._build_region derives
+    BOTH thickness output roles from this single PointObservations: h_dense
+    (resampled onto the velocity (xd,yd) grid) and hd/xd_h/yd_h (the
+    source's own native points). Surface elevation is a separate,
+    independent fetch — see data_sources/surface.py."""
+    return _load(config, region_polygon, config.thickness_source, config.thickness_kwargs)

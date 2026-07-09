@@ -45,20 +45,21 @@ class PipelineConfig:
     buffer_km: float
 
     velocity_source: str = "measures_v2"
-    # h_dense: a dense gridded product, resampled onto the velocity
-    # (xd,yd) locations.
-    dense_thickness_source: str = "bedmachine_v3"
-    # hd/xd_h/yd_h: kept at its own native (possibly sparse) locations —
-    # real thickness data legitimately lives at different points than
-    # velocity data (see data-README.md in DIFFICE_jax's synthetic_data).
-    sparse_thickness_source: str = "bedmap1_csv"
-    # s_dense: independent of thickness (see data_sources/surface.py),
-    # resampled onto the velocity (xd,yd) locations.
-    dense_surface_source: str = "bedmachine_v3"
-    # sd/xd_s/yd_s: kept at its own native locations, not resampled onto
-    # the sparse-thickness grid — see
+    # One source per data kind. thickness_source feeds BOTH thickness
+    # output roles: h_dense (resampled onto the velocity (xd,yd) grid) and
+    # hd/xd_h/yd_h (the source's own native points — e.g. real BEDMAP radar
+    # tracks, which legitimately live at different points than velocity
+    # data; see data-README.md in DIFFICE_jax's synthetic_data). A dense
+    # gridded source (bedmachine_v3) has no native sparse points distinct
+    # from its own grid, so for it BOTH roles are resampled onto (xd,yd) —
+    # see build_dataset._build_region.
+    thickness_source: str = "bedmachine_v3"
+    # surface_source feeds BOTH surface output roles the same way: s_dense
+    # (resampled onto (xd,yd)) and sd/xd_s/yd_s (native points). Surface is
+    # a fully independent data kind, never derived from thickness, even when
+    # both point at the same file — see data_sources/surface.py and
     # docs/adr/0001-surface-elevation-independent-coordinates.md.
-    sparse_surface_source: str = "bedmap1_csv"
+    surface_source: str = "bedmachine_v3"
     # Drop grounded-region velocity (and everything resampled/derived from
     # it: xd/yd/ud/vd, xcol/ycol, h_dense/s_dense, ols_d) below this speed.
     # None = no filtering (keep the pre-existing behavior). Only applies to
@@ -134,10 +135,8 @@ class PipelineConfig:
     # Extra kwargs forwarded verbatim to the chosen source-processing
     # functions (e.g. a `custom_xy` source's array/path).
     velocity_kwargs: dict = field(default_factory=dict)
-    dense_thickness_kwargs: dict = field(default_factory=dict)
-    sparse_thickness_kwargs: dict = field(default_factory=dict)
-    dense_surface_kwargs: dict = field(default_factory=dict)
-    sparse_surface_kwargs: dict = field(default_factory=dict)
+    thickness_kwargs: dict = field(default_factory=dict)
+    surface_kwargs: dict = field(default_factory=dict)
     grounding_line_kwargs: dict = field(default_factory=dict)
     calving_front_kwargs: dict = field(default_factory=dict)
     floating_region_kwargs: dict = field(default_factory=dict)

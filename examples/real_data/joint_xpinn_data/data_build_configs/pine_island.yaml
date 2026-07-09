@@ -35,10 +35,13 @@ ice_shelf: Pine Island
 grounding_zone: Pine Island
 buffer_km: 100
 
-# BedMachine for both thickness roles (dense role already defaults to
-# this) — no BEDMAP1/2 concat, unlike the Amery configs.
-dense_thickness_source: bedmachine_v3
-sparse_thickness_source: bedmachine_v3
+# BedMachine v3 for thickness (no BEDMAP1/2 concat, unlike the Amery
+# configs) and for surface elevation — both the default, set explicitly for
+# reproducibility. As a dense grid, BedMachine feeds both the dense
+# (h_dense/s_dense) and sparse (hd/sd) roles resampled onto the velocity
+# grid (xd_h==xd_s==xd) — see build_dataset.
+thickness_source: bedmachine_v3
+surface_source: bedmachine_v3
 
 # Resample the (ordered, measures_boundaries_2008 default) grounding
 # line so no two consecutive points are more than 500m apart — same

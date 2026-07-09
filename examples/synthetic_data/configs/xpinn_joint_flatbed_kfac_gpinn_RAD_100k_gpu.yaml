@@ -4,7 +4,11 @@ workflow: joint_inversion
 runtime:
   jax_platform: cuda
   precision: double
-  jax_compilation_cache_dir: /oak/stanford/groups/cyaolai/JasperChen/Software/Cache_jax
+  # Machine-specific path removed: prefer exporting JAX_COMPILATION_CACHE_DIR
+  # in your job script over hardcoding a shared owner path here (a hardcoded
+  # path here breaks for any other user once JAX creates non-group-writable
+  # subdirectories under it -- see Cache_jax permission bug).
+  # jax_compilation_cache_dir: /path/to/Cache_jax
   jax_enable_compilation_cache: true
   jax_explain_cache_misses: false
   jax_persistent_cache_min_compile_time_secs: 0

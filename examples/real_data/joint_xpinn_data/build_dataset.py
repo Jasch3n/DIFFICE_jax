@@ -244,46 +244,43 @@ def _build_region(config: PipelineConfig, regions: DomainRegions, polygon, is_gr
         vel = _filter_by_speed(vel, config.grounded_min_speed_myr)
     elif not is_grounded and regions.front_erosion_band_m > 0.0:
         vel = _filter_by_front(vel, regions.calving_front, regions.grounding_line, regions.front_erosion_band_m)
-    dense_thick = thickness.load_dense_thickness(config, polygon)
-    sparse_thick = thickness.load_sparse_thickness(config, polygon)
-    dense_surf = surface.load_dense_surface(config, polygon)
-    sparse_surf = surface.load_sparse_surface(config, polygon)
+    thick = thickness.load_thickness(config, polygon)
+    surf = surface.load_surface(config, polygon)
 
     xd, yd = vel.x, vel.y
     ud, vd = vel.values["u"], vel.values["v"]
 
-    h_dense = nearest_sample(xd, yd, dense_thick)["thickness"]
-    s_dense = nearest_sample(xd, yd, dense_surf)["surface"]
+    h_dense = nearest_sample(xd, yd, thick)["thickness"]
+    s_dense = nearest_sample(xd, yd, surf)["surface"]
 
-    # bedmachine_v3 is a dense grid, not a genuinely sparse survey — it has
-    # no independent "native sparse points" distinct from its own dense
-    # grid, unlike bedmap1_csv/bedmap2_csv's real, independently-located
-    # radar tracks. Using it for the sparse role while keeping its own
-    # native BedMachine-grid points (a different grid than xd/yd) made
-    # dense/sparse visibly different even when both roles pointed at the
-    # exact same source — resample onto (xd,yd) like the dense role
-    # instead, so the two are consistent.
-    if config.sparse_thickness_source == "bedmachine_v3":
-        xd_h, yd_h = xd, yd
-        hd = nearest_sample(xd, yd, sparse_thick)["thickness"]
+    # h_dense/s_dense above are the configured source resampled onto the
+    # velocity (xd,yd) grid. hd/sd below are the SAME source at its own
+    # native points — EXCEPT bedmachine_v3, a dense grid with no native
+    # sparse points distinct from its own grid (unlike bedmap1_csv/
+    # bedmap2_csv's real, independently-located radar tracks). Keeping
+    # BedMachine's own grid points here made the dense and sparse roles
+    # visibly different even though they come from one source, so for
+    # bedmachine_v3 the sparse role is resampled onto (xd,yd) too, giving
+    # xd_h==xd and hd==h_dense.
+    if config.thickness_source == "bedmachine_v3":
+        xd_h, yd_h, hd = xd, yd, h_dense
     else:
-        xd_h, yd_h, hd = sparse_thick.x, sparse_thick.y, sparse_thick.values["thickness"]
+        xd_h, yd_h, hd = thick.x, thick.y, thick.values["thickness"]
 
     # xd_s/yd_s are surface elevation's own native points, independent of
     # xd_h/yd_h — not resampled onto the thickness grid, see
     # docs/adr/0001-surface-elevation-independent-coordinates.md. Even when
-    # sparse_thickness_source and sparse_surface_source are the same file
-    # (e.g. both bedmap1_csv), xd_h and xd_s can differ in count and in
-    # which rows survive: each column is sentinel-filtered independently
-    # (data_sources/thickness.py's process_bedmap1_column), so a row with
+    # thickness_source and surface_source are the same file (e.g. both
+    # bedmap1_csv), xd_h and xd_s can differ in count and in which rows
+    # survive: each column is sentinel-filtered independently
+    # (data_sources/thickness.py's process_bedmap_column), so a row with
     # valid thickness but a sentinel surface value (or vice versa) is kept
     # for one and dropped for the other. Same bedmachine_v3 special case as
     # thickness above, for the same reason.
-    if config.sparse_surface_source == "bedmachine_v3":
-        xd_s, yd_s = xd, yd
-        sd = nearest_sample(xd, yd, sparse_surf)["surface"]
+    if config.surface_source == "bedmachine_v3":
+        xd_s, yd_s, sd = xd, yd, s_dense
     else:
-        xd_s, yd_s, sd = sparse_surf.x, sparse_surf.y, sparse_surf.values["surface"]
+        xd_s, yd_s, sd = surf.x, surf.y, surf.values["surface"]
 
     # Collocation library (xcol/ycol). By default it is the velocity data
     # points (xd/yd). When the config sets a `collocation` block, sample an
@@ -389,10 +386,8 @@ def build_dataset(config: PipelineConfig) -> dict:
         grounding_zone=config.grounding_zone,
         buffer_km=config.buffer_km,
         velocity_source=config.velocity_source,
-        dense_thickness_source=config.dense_thickness_source,
-        sparse_thickness_source=config.sparse_thickness_source,
-        dense_surface_source=config.dense_surface_source,
-        sparse_surface_source=config.sparse_surface_source,
+        thickness_source=config.thickness_source,
+        surface_source=config.surface_source,
         grounding_line_source=config.grounding_line_source,
         calving_front_source=config.calving_front_source,
         floating_region_source=config.floating_region_source,
@@ -411,10 +406,8 @@ def build_dataset(config: PipelineConfig) -> dict:
         options=options,
         solution_source=(
             f"Real observational data: velocity={config.velocity_source}, "
-            f"dense_thickness={config.dense_thickness_source}, "
-            f"sparse_thickness={config.sparse_thickness_source}, "
-            f"dense_surface={config.dense_surface_source}, "
-            f"sparse_surface={config.sparse_surface_source}, "
+            f"thickness={config.thickness_source}, "
+            f"surface={config.surface_source}, "
             f"grounding_line={config.grounding_line_source}, "
             f"calving_front={config.calving_front_source}"
         ),

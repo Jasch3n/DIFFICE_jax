@@ -1,23 +1,27 @@
 # Amery Ice Shelf + Lambert Glacier grounding zone, 100km upstream buffer.
 # This is the configuration validated end-to-end in development (see
-# ../HANDOFF.md) — all sources below are the current defaults, listed
-# explicitly here for reproducibility rather than relying on PipelineConfig
-# defaults potentially changing later.
+# ../HANDOFF.md) — sources are listed explicitly here for reproducibility
+# rather than relying on PipelineConfig defaults potentially changing later.
 
 ice_shelf: Amery
 grounding_zone: Lambert
 buffer_km: 100
 
 velocity_source: measures_v2
-dense_thickness_source: bedmachine_v3
-# BEDMAP1 (1966-2000) concatenated with BEDMAP2's BGR PCMEGA survey
-# (2002-2003, Lambert Glacier / Prince Charles Mountains) — the latter
-# fills in real coverage gaps BEDMAP1 alone leaves in this area.
-sparse_thickness_source: concat
-sparse_thickness_kwargs:
+# Thickness: BEDMAP1 (1966-2000) concatenated with BEDMAP2's BGR PCMEGA
+# survey (2002-2003, Lambert Glacier / Prince Charles Mountains) — the
+# latter fills real coverage gaps BEDMAP1 alone leaves in this area. This
+# single source feeds both thickness roles: h_dense (resampled onto the
+# velocity grid) and hd (its own native radar-track points).
+thickness_source: concat
+thickness_kwargs:
   sources:
     - source: bedmap1_csv
     - source: bedmap2_csv
+# Surface elevation: BedMachine v3 (a complete gridded DEM). Feeds both
+# s_dense and sd; as a dense grid it has no native sparse points, so sd is
+# resampled onto the velocity grid too (xd_s==xd) — see build_dataset.
+surface_source: bedmachine_v3
 grounding_line_source: measures_boundaries_2008
 calving_front_source: bedmachine_mask
 

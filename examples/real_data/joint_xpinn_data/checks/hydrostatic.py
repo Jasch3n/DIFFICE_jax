@@ -27,8 +27,8 @@ def check_hydrostatic_equilibrium(
 ) -> CheckResult:
     """metric = delta = rho_ice*thickness + rho_seawater*(surface-thickness),
     in kg/m^2 — zero means the ice column is exactly floating. Evaluated at
-    the sparse-thickness role's own points (xd_h/yd_h); surface elevation
-    (its own independent data kind, see data_sources/surface.py) is
+    the thickness source's own points (xd_h/yd_h); surface elevation (its
+    own independent data kind, see data_sources/surface.py) is
     nearest-neighbor resampled onto those points purely for this
     computation, with no effect on the persisted .mat schema — see
     docs/adr/0001-surface-elevation-independent-coordinates.md.
@@ -44,11 +44,11 @@ def check_hydrostatic_equilibrium(
     regions = regions or build_regions(config)
     floating_polygon = regions.floating_polygon
 
-    sparse_thick = thickness.load_sparse_thickness(config, floating_polygon)
-    sparse_surf = surface.load_sparse_surface(config, floating_polygon)
+    thick = thickness.load_thickness(config, floating_polygon)
+    surf = surface.load_surface(config, floating_polygon)
 
-    surf_at_thick = nearest_sample(sparse_thick.x, sparse_thick.y, sparse_surf)["surface"]
-    h = sparse_thick.values["thickness"]
+    surf_at_thick = nearest_sample(thick.x, thick.y, surf)["surface"]
+    h = thick.values["thickness"]
     delta = rho_ice * h + rho_seawater * (surf_at_thick - h)
 
     passed = None if threshold is None else bool((np.abs(delta) <= threshold).all())
@@ -56,8 +56,8 @@ def check_hydrostatic_equilibrium(
     return CheckResult(
         name="hydrostatic_equilibrium",
         region="floating",
-        x=sparse_thick.x,
-        y=sparse_thick.y,
+        x=thick.x,
+        y=thick.y,
         metric=delta,
         unit="kg/m^2",
         threshold=threshold,

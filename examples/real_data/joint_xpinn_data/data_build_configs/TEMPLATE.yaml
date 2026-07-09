@@ -28,10 +28,12 @@ buffer_km: 100
 # tradeoffs of each alternative and *_SOURCES for the full registry) ---
 
 # velocity_source: measures_v2          # or: custom_xy
-# dense_thickness_source: bedmachine_v3 # or: bedmap1_csv, bedmap2_csv, concat, custom_xy
-# sparse_thickness_source: bedmap1_csv  # or: bedmachine_v3, bedmap2_csv, concat, custom_xy
-# dense_surface_source: bedmachine_v3   # or: bedmap1_csv, custom_xy
-# sparse_surface_source: bedmap1_csv    # or: bedmachine_v3, custom_xy
+# One source per data kind. Each feeds BOTH output roles: the dense field
+# (h_dense/s_dense, resampled onto the velocity grid) and the sparse field
+# (hd/sd, the source's own native points — for a dense grid like
+# bedmachine_v3, resampled onto the velocity grid too). See build_dataset.
+# thickness_source: bedmachine_v3       # or: bedmap1_csv, bedmap2_csv, concat, custom_xy
+# surface_source: bedmachine_v3         # or: bedmap1_csv, custom_xy
 # grounding_line_source: measures_boundaries_2008  # or: bedmachine_mask, custom_xy
 # calving_front_source: bedmachine_mask # or: antarctic_boundaries_mask, velocity_mask, measures_boundaries_2008, custom_xy
 # floating_region_source: whole_shelf   # or: flowline_corridor, basin_partition
@@ -63,12 +65,12 @@ buffer_km: 100
 # floating_region_kwargs:
 #   margin_km: 15.0
 
-# `concat` (thickness only, any role) merges multiple named sources of
-# the same kind into one PointObservations, e.g. filling BEDMAP1's real
-# coverage gaps with BEDMAP2's PCMEGA survey rather than being stuck with
-# whichever single source a role is bound to:
-# sparse_thickness_source: concat
-# sparse_thickness_kwargs:
+# `concat` (thickness only) merges multiple named sources of the same kind
+# into one PointObservations, e.g. filling BEDMAP1's real coverage gaps
+# with BEDMAP2's PCMEGA survey rather than being stuck with a single
+# source:
+# thickness_source: concat
+# thickness_kwargs:
 #   sources:
 #     - source: bedmap1_csv
 #     - source: bedmap2_csv
@@ -148,10 +150,8 @@ buffer_km: 100
 # calving_front_kwargs:
 #   pad_km: 20.0
 # velocity_kwargs: {}
-# dense_thickness_kwargs: {}
-# sparse_thickness_kwargs: {}
-# dense_surface_kwargs: {}
-# sparse_surface_kwargs: {}
+# thickness_kwargs: {}
+# surface_kwargs: {}
 
 # --- Optional: override specific file paths (rare — only needed if
 # pointing at a different version of a dataset, e.g. BedMachine v4

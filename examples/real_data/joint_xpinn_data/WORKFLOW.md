@@ -66,22 +66,20 @@ Every source is a config field (works the same whether set in YAML or in `Pipeli
 ```yaml
 grounding_line_source: bedmachine_mask       # default: measures_boundaries_2008
 calving_front_source: antarctic_boundaries_mask  # default: bedmachine_mask
-dense_thickness_source: bedmachine_v3         # default
-sparse_thickness_source: bedmap1_csv          # default (also: bedmap2_csv, concat, custom_xy)
-dense_surface_source: bedmachine_v3           # default
-sparse_surface_source: bedmap1_csv            # default
+thickness_source: bedmachine_v3               # default (also: bedmap1_csv, bedmap2_csv, concat, custom_xy)
+surface_source: bedmachine_v3                 # default (also: bedmap1_csv, custom_xy)
 velocity_source: measures_v2                  # default
 ```
 
-Surface elevation (`sd`/`s_dense`) is sourced independently of thickness — see root `CLAUDE.md`'s note on `xd_s`/`yd_s` and `docs/adr/0001-surface-elevation-independent-coordinates.md` — so it has its own pair of source fields rather than riding along with `dense_thickness_source`/`sparse_thickness_source`.
+Each data kind has ONE source field, which feeds both output roles: the dense field (`h_dense`/`s_dense`, resampled onto the velocity `(xd,yd)` grid) and the sparse field (`hd`/`sd`, kept at the source's own native points — for a dense grid like `bedmachine_v3`, which has no native points distinct from its grid, the sparse role is resampled onto the velocity grid too). Surface elevation (`sd`/`s_dense`) is a fully independent data kind from thickness — see root `CLAUDE.md`'s note on `xd_s`/`yd_s` and `docs/adr/0001-surface-elevation-independent-coordinates.md` — so it has its own `surface_source` rather than riding along with `thickness_source`.
 
 Check the `*_SOURCES` dict in the relevant `data_sources/*.py` module for what's registered. Source-specific tuning knobs (e.g. `tol_km`, `pad_km`) go through the matching `*_kwargs` field, e.g. `grounding_line_kwargs: {tol_km: 20.0}`.
 
-For thickness, `concat` merges multiple named sources into one — e.g. all three Amery configs combine `bedmap1_csv` (1966-2000) with `bedmap2_csv` (BGR's 2002-2003 PCMEGA survey) for sparse thickness, since neither alone covers the Lambert/Mellor/Fisher area as densely as the two together:
+For thickness, `concat` merges multiple named sources into one — e.g. all three Amery configs combine `bedmap1_csv` (1966-2000) with `bedmap2_csv` (BGR's 2002-2003 PCMEGA survey), since neither alone covers the Lambert/Mellor/Fisher area as densely as the two together:
 
 ```yaml
-sparse_thickness_source: concat
-sparse_thickness_kwargs:
+thickness_source: concat
+thickness_kwargs:
   sources:
     - source: bedmap1_csv
     - source: bedmap2_csv

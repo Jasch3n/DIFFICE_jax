@@ -97,6 +97,7 @@ __all__ = [
     "save_equation_residuals",
     "save_x_equation_term_ratios",
     "save_loss_curve",
+    "render_from_solver",
     "render_from_saved_solver",
 ]
 
@@ -746,12 +747,17 @@ def _prediction_plot_cache(solver, predictions, diagnostics, loss_history, tag, 
     )
 
 
-def render_from_saved_solver(config_path, solver_dir, tag):
-    config = djax.load_workflow_config(config_path)
-    solver_dir = _resolve_solver_dir(config, solver_dir)
-    _warn_if_saved_config_differs(config, solver_dir)
-    solver = djax.build_solver_from_config(config).prepare().load_params(solver_dir / "params.pkl")
-    loss_history = _load_pickle(solver_dir / "loss_history.pkl")
+def render_from_solver(solver, config, solver_dir, tag, loss_history=None):
+    """Render the standard XPINN figure set from an in-memory, fitted solver.
+
+    Reuses an already prepared+fitted DIFFICESolver (e.g. the one returned by
+    ``run_training_workflow``) rather than rebuilding from config and reloading
+    params from disk. Figures are written under ``<solver_dir>/plots``.
+    ``loss_history`` defaults to ``solver.loss_history``.
+    """
+    solver_dir = Path(solver_dir)
+    if loss_history is None:
+        loss_history = solver.loss_history
 
     start = time.perf_counter()
     predictions = solver.predict()
@@ -760,17 +766,18 @@ def render_from_saved_solver(config_path, solver_dir, tag):
 
     plot_dir = solver_dir / "plots"
     paths = _plot_paths(plot_dir, tag)
+    loss_array = np.asarray(loss_history, dtype=float)
     metadata = dict(
         optimizer="KFAC",
         requested_iterations=int(config.training["stages"][0]["iterations"]),
         start_iteration=0,
-        final_iteration=int(np.asarray(loss_history, dtype=float)[-1, 0]),
-        trained_iterations=int(np.asarray(loss_history, dtype=float)[-1, 0]),
+        final_iteration=int(loss_array[-1, 0]),
+        trained_iterations=int(loss_array[-1, 0]),
         elapsed_seconds=np.nan,
         prediction_seconds=predict_seconds,
-        initial_objective=float(np.asarray(loss_history, dtype=float)[0, 1]),
-        final_objective=float(np.asarray(loss_history, dtype=float)[-1, 1]),
-        loss_history=np.asarray(loss_history, dtype=float),
+        initial_objective=float(loss_array[0, 1]),
+        final_objective=float(loss_array[-1, 1]),
+        loss_history=loss_array,
         data_path=str(solver.data_config.source),
         sample_count=np.nan,
         requested_interface_points=np.nan,
@@ -785,6 +792,15 @@ def render_from_saved_solver(config_path, solver_dir, tag):
     )
     _save_plot_cache(paths["cache"], _prediction_plot_cache(solver, predictions, diagnostics, loss_history, tag, metadata))
     return _render_plot_cache(paths["cache"], plot_dir, tag=tag)
+
+
+def render_from_saved_solver(config_path, solver_dir, tag):
+    config = djax.load_workflow_config(config_path)
+    solver_dir = _resolve_solver_dir(config, solver_dir)
+    _warn_if_saved_config_differs(config, solver_dir)
+    solver = djax.build_solver_from_config(config).prepare().load_params(solver_dir / "params.pkl")
+    loss_history = _load_pickle(solver_dir / "loss_history.pkl")
+    return render_from_solver(solver, config, solver_dir, tag, loss_history=loss_history)
 
 
 def main():

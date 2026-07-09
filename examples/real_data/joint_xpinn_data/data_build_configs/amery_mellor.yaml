@@ -27,14 +27,18 @@ floating_region_kwargs:
   margin_km: 15.0
   taper_km: 0.0
 
-# BEDMAP1 (1966-2000) concatenated with BEDMAP2's BGR PCMEGA survey
-# (2002-2003, Lambert Glacier / Prince Charles Mountains) — the latter
-# fills in real coverage gaps BEDMAP1 alone leaves in this area.
-sparse_thickness_source: concat
-sparse_thickness_kwargs:
+# Thickness: BEDMAP1 (1966-2000) concatenated with BEDMAP2's BGR PCMEGA
+# survey (2002-2003, Lambert Glacier / Prince Charles Mountains) — the
+# latter fills real coverage gaps BEDMAP1 alone leaves in this area. Feeds
+# both thickness roles (h_dense resampled onto the velocity grid, hd at
+# native radar-track points).
+thickness_source: concat
+thickness_kwargs:
   sources:
     - source: bedmap1_csv
     - source: bedmap2_csv
+# Surface elevation: BedMachine v3 (complete gridded DEM) for both roles.
+surface_source: bedmachine_v3
 
 # Resample the (ordered, measures_boundaries_2008 default) grounding line
 # so no two consecutive points are more than 500m apart — its native

@@ -22,11 +22,28 @@ Config path handling:
 What the script does:
 - with --sbatch, submits itself with matching SLURM resources
 - without --sbatch, runs immediately on the current machine
-- activates /oak/stanford/groups/cyaolai/JasperChen/VirtualEnv/DIFFICE_gpu_env for --gpu
-- activates /oak/stanford/groups/cyaolai/JasperChen/VirtualEnv/DIFFICE_cpu_env for --cpu
+- activates $DIFFICE_GPU_VENV for --gpu (default: /oak/stanford/groups/cyaolai/JasperChen/VirtualEnv/DIFFICE_gpu_env)
+- activates $DIFFICE_CPU_VENV for --cpu (default: /oak/stanford/groups/cyaolai/JasperChen/VirtualEnv/DIFFICE_cpu_env)
 - unsets inherited JAX platform selectors
 - sets OMP_NUM_THREADS from SLURM_CPUS_PER_TASK
 - runs examples/run_inversion.py from the repo root
+
+Portability:
+- The repo location is auto-detected by default (via $SLURM_SUBMIT_DIR under
+  sbatch, or the script's own path otherwise), so a copy of this script placed
+  inside a DIFFICE_jax checkout works from any clone/location, including
+  another user's oak folder.
+- To keep your own launcher script and configs in a separate personal folder
+  while still running run_inversion.py out of one shared DIFFICE_jax checkout,
+  export DIFFICE_REPO_ROOT to point at that checkout, e.g.:
+    export DIFFICE_REPO_ROOT=/oak/stanford/groups/cyaolai/JasperChen/Software/DIFFICE_jax
+  Config paths then resolve as: absolute path as-is, else relative to your
+  current directory, else relative to $DIFFICE_REPO_ROOT/examples or
+  $DIFFICE_REPO_ROOT.
+- Export DIFFICE_GPU_VENV / DIFFICE_CPU_VENV before running to point at your own
+  virtualenvs instead of the defaults above.
+- Job notification email is not hardcoded; Slurm defaults --mail-user to whoever
+  submits the job.
 
 Notes:
 - Run the script directly instead of invoking sbatch yourself; this lets --sbatch, --gpu, and --cpu choose the correct scheduler resources before submission.

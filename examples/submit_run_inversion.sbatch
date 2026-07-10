@@ -12,7 +12,8 @@
 #SBATCH --time=9:10:00          # total run time limit (HH:MM:SS)
 #SBATCH --mail-type=begin        # send email when job begins
 #SBATCH --mail-type=end          # send email when job ends
-#SBATCH --mail-user=jasperchen@stanford.edu
+# No --mail-user: Slurm defaults to the submitting user, so this stays
+# correct for whoever runs the job.
 
 set -euo pipefail
 
@@ -22,9 +23,32 @@ if [ "$#" -lt 1 ]; then
     exit 1
 fi
 
-SCRIPT_PATH="$(realpath "${BASH_SOURCE[0]}")"
-SCRIPT_DIR="$(cd "$(dirname "${SCRIPT_PATH}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+# DIFFICE_REPO_ROOT lets this script be copied/launched from anywhere (e.g. a
+# separate launcher folder that keeps its own configs) while still running
+# run_inversion.py out of a shared DIFFICE_jax checkout. Falls back to
+# auto-detection for the common case where this script lives inside the repo
+# it's launching.
+#
+# Under sbatch, Slurm copies this script into a per-job spool directory and
+# executes that copy, so ${BASH_SOURCE[0]} does not point at the real repo.
+# $SLURM_SUBMIT_DIR (the cwd where `sbatch` was invoked) is unaffected by that
+# copy, so prefer it whenever we're actually running as a Slurm job.
+if [ -n "${DIFFICE_REPO_ROOT:-}" ]; then
+    if [ ! -f "${DIFFICE_REPO_ROOT}/examples/run_inversion.py" ]; then
+        echo "DIFFICE_REPO_ROOT=${DIFFICE_REPO_ROOT} has no examples/run_inversion.py" >&2
+        exit 1
+    fi
+    REPO_ROOT="$(cd "${DIFFICE_REPO_ROOT}" && pwd)"
+elif [ -n "${SLURM_SUBMIT_DIR:-}" ] && [ -f "${SLURM_SUBMIT_DIR}/examples/run_inversion.py" ]; then
+    REPO_ROOT="${SLURM_SUBMIT_DIR}"
+elif [ -n "${SLURM_SUBMIT_DIR:-}" ] && [ -f "${SLURM_SUBMIT_DIR}/run_inversion.py" ]; then
+    REPO_ROOT="$(cd "${SLURM_SUBMIT_DIR}/.." && pwd)"
+else
+    SCRIPT_PATH="$(realpath "${BASH_SOURCE[0]}")"
+    SCRIPT_DIR="$(cd "$(dirname "${SCRIPT_PATH}")" && pwd)"
+    REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+fi
+SCRIPT_DIR="${REPO_ROOT}/examples"
 CONFIG_ARG="$1"
 shift
 
@@ -41,8 +65,16 @@ else
     exit 1
 fi
 
+# DIFFICE_GPU_VENV lets other users point at their own virtualenv instead of
+# the default below; the fallback is the original hardcoded path.
+GPU_VENV="${DIFFICE_GPU_VENV:-/oak/stanford/groups/cyaolai/JasperChen/VirtualEnv/DIFFICE_gpu_env}"
+if [ ! -f "${GPU_VENV}/bin/activate" ]; then
+    echo "GPU virtualenv not found at ${GPU_VENV}/bin/activate. Set DIFFICE_GPU_VENV to your venv path." >&2
+    exit 1
+fi
+
 module unload cuda || true
-source /oak/stanford/groups/cyaolai/JasperChen/VirtualEnv/DIFFICE_gpu_env/bin/activate
+source "${GPU_VENV}/bin/activate"
 
 unset JAX_PLATFORMS
 unset JAX_PLATFORM_NAME

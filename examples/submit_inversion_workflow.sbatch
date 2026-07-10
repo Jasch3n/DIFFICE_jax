@@ -10,7 +10,8 @@
 #SBATCH --time=23:10:00
 #SBATCH --mail-type=begin
 #SBATCH --mail-type=end
-#SBATCH --mail-user=jasperchen@stanford.edu
+# No --mail-user: Slurm defaults to the submitting user, so this stays
+# correct for whoever runs the job.
 
 set -euo pipefail
 
@@ -69,9 +70,35 @@ if [ "$#" -lt 1 ]; then
     exit 1
 fi
 
+# SCRIPT_PATH is this file's own location, used below to resubmit itself via
+# --sbatch. That resubmission always happens from a direct (non-sbatch) shell
+# invocation, so ${BASH_SOURCE[0]} is reliable here regardless of where this
+# launcher script lives (e.g. a separate folder outside the DIFFICE_jax repo).
 SCRIPT_PATH="$(realpath "${BASH_SOURCE[0]}")"
-SCRIPT_DIR="$(cd "$(dirname "${SCRIPT_PATH}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+# DIFFICE_REPO_ROOT lets this launcher live anywhere (e.g. a personal folder
+# with its own configs) while still running run_inversion.py out of a shared
+# DIFFICE_jax checkout. Falls back to auto-detection for the common case where
+# this script lives inside the repo it's launching.
+#
+# Once running as the actual Slurm job (i.e. past the --sbatch resubmission
+# below), Slurm has copied this script into a per-job spool directory, so
+# ${BASH_SOURCE[0]} no longer points at the real repo; $SLURM_SUBMIT_DIR (the
+# cwd where `sbatch` was invoked) is unaffected by that copy.
+if [ -n "${DIFFICE_REPO_ROOT:-}" ]; then
+    if [ ! -f "${DIFFICE_REPO_ROOT}/examples/run_inversion.py" ]; then
+        echo "DIFFICE_REPO_ROOT=${DIFFICE_REPO_ROOT} has no examples/run_inversion.py" >&2
+        exit 1
+    fi
+    REPO_ROOT="$(cd "${DIFFICE_REPO_ROOT}" && pwd)"
+elif [ -n "${SLURM_SUBMIT_DIR:-}" ] && [ -f "${SLURM_SUBMIT_DIR}/examples/run_inversion.py" ]; then
+    REPO_ROOT="${SLURM_SUBMIT_DIR}"
+elif [ -n "${SLURM_SUBMIT_DIR:-}" ] && [ -f "${SLURM_SUBMIT_DIR}/run_inversion.py" ]; then
+    REPO_ROOT="$(cd "${SLURM_SUBMIT_DIR}/.." && pwd)"
+else
+    REPO_ROOT="$(cd "$(dirname "${SCRIPT_PATH}")/.." && pwd)"
+fi
+SCRIPT_DIR="${REPO_ROOT}/examples"
 CONFIG_ARG="$1"
 shift
 
@@ -101,7 +128,6 @@ if [ "${SUBMIT_BATCH}" = "true" ]; then
         --time=23:10:00
         --mail-type=begin
         --mail-type=end
-        --mail-user=jasperchen@stanford.edu
     )
     if [ "${BACKEND}" = "gpu" ]; then
         SBATCH_ARGS+=(--constraint=GPU_SKU:A100_SXM4 --gres=gpu:1)
@@ -109,13 +135,26 @@ if [ "${SUBMIT_BATCH}" = "true" ]; then
     exec sbatch "${SBATCH_ARGS[@]}" "${SCRIPT_PATH}" "--${BACKEND}" "${CONFIG_PATH}" "$@"
 fi
 
+# DIFFICE_GPU_VENV / DIFFICE_CPU_VENV let other users point at their own
+# virtualenvs instead of the defaults below; the fallbacks are the original
+# hardcoded paths.
 case "${BACKEND}" in
     gpu)
+        GPU_VENV="${DIFFICE_GPU_VENV:-/oak/stanford/groups/cyaolai/JasperChen/VirtualEnv/DIFFICE_gpu_env}"
+        if [ ! -f "${GPU_VENV}/bin/activate" ]; then
+            echo "GPU virtualenv not found at ${GPU_VENV}/bin/activate. Set DIFFICE_GPU_VENV to your venv path." >&2
+            exit 1
+        fi
         module unload cuda || true
-        source /oak/stanford/groups/cyaolai/JasperChen/VirtualEnv/DIFFICE_gpu_env/bin/activate
+        source "${GPU_VENV}/bin/activate"
         ;;
     cpu)
-        source /oak/stanford/groups/cyaolai/JasperChen/VirtualEnv/DIFFICE_cpu_env/bin/activate
+        CPU_VENV="${DIFFICE_CPU_VENV:-/oak/stanford/groups/cyaolai/JasperChen/VirtualEnv/DIFFICE_cpu_env}"
+        if [ ! -f "${CPU_VENV}/bin/activate" ]; then
+            echo "CPU virtualenv not found at ${CPU_VENV}/bin/activate. Set DIFFICE_CPU_VENV to your venv path." >&2
+            exit 1
+        fi
+        source "${CPU_VENV}/bin/activate"
         ;;
     *)
         echo "Unknown backend: ${BACKEND}" >&2

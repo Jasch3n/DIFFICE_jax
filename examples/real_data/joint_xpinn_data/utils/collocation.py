@@ -16,13 +16,18 @@ Method — two-tier, low-discrepancy (Halton), configured by ``PipelineConfig``'
       interface_density: 2.0  # pts/km^2, inside the near-interface band
       interface_band_km: 10   # half-width (km) of that band
 
-The two tiers are *partitioned* (disjoint): the band around the region's
-interfaces holds exactly ``interface_density``, and the core (region minus
-band) holds ``density`` — so each subregion's point density is precisely what
-the config states. "Interfaces" are the grounding line for the grounded region
-and the grounding line + calving front for the floating region. Points are
-low-discrepancy (Halton, taken in sequence and kept where inside the polygon),
-so builds are deterministic and reproducible without a seed.
+``density``/``interface_density`` each accept either a scalar (same value for
+both regions, e.g. the Amery builds) or a ``[grounded, floating]`` pair, for
+shelves whose two regions have noticeably different velocity-point densities
+(e.g. Byrd's grounded corridor is flow-filtered to a much sparser trunk than
+its floating region). The two tiers are *partitioned* (disjoint): the band
+around the region's interfaces holds exactly ``interface_density``, and the
+core (region minus band) holds ``density`` — so each subregion's point density
+is precisely what the config states. "Interfaces" are the grounding line for
+the grounded region and the grounding line + calving front for the floating
+region. Points are low-discrepancy (Halton, taken in sequence and kept where
+inside the polygon), so builds are deterministic and reproducible without a
+seed.
 
 When the ``collocation`` block is absent (or ``density`` is None), this module
 is not invoked and the caller keeps ``xcol/ycol = xd/yd`` — existing outputs
@@ -47,9 +52,20 @@ _VALID_KEYS = {"density", "interface_density", "interface_band_km"}
 
 @dataclass(frozen=True)
 class CollocationSettings:
-    density: float  # pts/km^2 over the whole region (core tier)
-    interface_density: float  # pts/km^2 inside the near-interface band
+    density: tuple[float, float]  # pts/km^2 over the whole region (core tier), (grounded, floating)
+    interface_density: tuple[float, float]  # pts/km^2 inside the near-interface band, (grounded, floating)
     interface_band_km: float  # half-width (km) of that band
+
+
+def _as_region_pair(value) -> tuple[float, float]:
+    """A scalar broadcasts to both regions; a 2-element sequence is (grounded, floating)."""
+    if isinstance(value, (list, tuple)):
+        if len(value) != 2:
+            raise ValueError(
+                f"collocation density must be a scalar or a [grounded, floating] pair, got {value!r}."
+            )
+        return float(value[0]), float(value[1])
+    return float(value), float(value)
 
 
 def collocation_settings(config) -> CollocationSettings | None:
@@ -65,8 +81,8 @@ def collocation_settings(config) -> CollocationSettings | None:
     if density is None:
         return None
     return CollocationSettings(
-        density=float(density),
-        interface_density=float(spec.get("interface_density", density)),
+        density=_as_region_pair(density),
+        interface_density=_as_region_pair(spec.get("interface_density", density)),
         interface_band_km=float(spec.get("interface_band_km", 10.0)),
     )
 
@@ -122,6 +138,10 @@ def sample_collocation(regions: DomainRegions, polygon, is_grounded: bool,
     Returns ``(xcol, ycol)`` as 1-D arrays. The band around the region's
     interfaces is sampled at ``interface_density``; the rest at ``density``.
     """
+    idx = 0 if is_grounded else 1
+    density = settings.density[idx]
+    interface_density = settings.interface_density[idx]
+
     interface_pts = _interface_points(regions, is_grounded)
     band_m = settings.interface_band_km * 1e3
     if interface_pts.size and band_m > 0.0:
@@ -132,8 +152,8 @@ def sample_collocation(regions: DomainRegions, polygon, is_grounded: bool,
         band = Polygon()  # no interfaces / zero band width -> everything is core
         core = polygon
 
-    core_n = int(round(core.area / 1e6 * settings.density))
-    band_n = int(round(band.area / 1e6 * settings.interface_density))
+    core_n = int(round(core.area / 1e6 * density))
+    band_n = int(round(band.area / 1e6 * interface_density))
     core_xy = _halton_in_polygon(core, core_n)
     band_xy = _halton_in_polygon(band, band_n)
     xy = np.vstack([core_xy, band_xy]) if (core_xy.size or band_xy.size) else np.zeros((0, 2))

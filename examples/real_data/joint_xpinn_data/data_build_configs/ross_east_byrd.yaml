@@ -92,3 +92,16 @@ grounding_line_resample_m: 500.0
 # this. Byrd is one of Antarctica's fastest outlet glaciers, but its
 # 100km upstream buffer may still reach into slower ice near a divide.
 grounded_min_speed_myr: 100.0
+
+# Collocation library (xcol/ycol): an independent, density-controlled Halton
+# sample instead of reusing the velocity data points. A per-region [grounded,
+# floating] pair, not a single scalar like the Amery configs — Byrd's
+# flow-filtered grounded corridor (~2492 km^2, 6813 velocity points, a
+# density of ~2.73 pts/km^2) is far sparser than its floating region
+# (~22435 km^2, 110684 velocity points, ~4.93 pts/km^2), so one shared
+# density would overshoot one region or undershoot the other by ~1.8x.
+# interface_density matches density (no near-interface boost) since the
+# goal here is just to track each region's own real velocity-point density.
+# See utils/collocation.py.
+collocation:
+  density: [2.73, 4.93]  # pts/km^2 (grounded, floating)

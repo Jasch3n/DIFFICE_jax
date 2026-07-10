@@ -3,6 +3,7 @@ workflow: joint_inversion
 
 runtime:
   jax_platform: cuda
+  precision: double
   # Machine-specific path removed: prefer exporting JAX_COMPILATION_CACHE_DIR
   # in your job script over hardcoding a shared owner path here (a hardcoded
   # path here breaks for any other user once JAX creates non-group-writable

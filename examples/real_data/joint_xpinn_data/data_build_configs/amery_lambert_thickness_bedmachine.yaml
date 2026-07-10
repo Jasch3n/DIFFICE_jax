@@ -80,6 +80,6 @@ grounded_min_speed_myr: 100.0
 # interface_band_km of the interfaces holds interface_density; the rest holds
 # density. See utils/collocation.py.
 collocation:
-  density: 0.4            # pts/km^2 over the whole region
-  interface_density: 2.0  # pts/km^2 within interface_band_km of the interfaces
+  density: 1.2            # pts/km^2 over the whole region
+  interface_density: 6.0  # pts/km^2 within interface_band_km of the interfaces
   interface_band_km: 5    # half-width (km) of the near-interface band

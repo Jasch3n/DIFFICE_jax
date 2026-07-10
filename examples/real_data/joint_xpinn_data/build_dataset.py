@@ -61,6 +61,25 @@ BASAL_MASK = [1, 0]
 
 _SECONDS_PER_YEAR = 365.25 * 86400.0
 
+# Buffer applied to a region's polygon before cropping the thickness/surface
+# source used for the *dense* role (h_dense/s_dense, nearest-sampled onto the
+# velocity grid xd/yd). Without this, a query point near the grounded/
+# floating interface can have its true geographically-nearest source pixel
+# excluded merely because it sits just across the (somewhat arbitrary,
+# velocity-derived) region boundary -- forcing nearest_sample to substitute a
+# farther, differently-valued pixel and manufacturing an artificial cliff in
+# an otherwise-smooth field right at the interface (confirmed for Amery/
+# Lambert's dense_bedmachine build: several near-interface points' h_dense
+# differed from the true unrestricted-nearest BedMachine thickness at that
+# exact coordinate by 150-450m). 5km is comfortably larger than
+# BedMachine's ~500m native resolution but much smaller than the region
+# polygons themselves (15-25km margins), so this only rescues genuinely
+# nearby pixels, not distant unrelated ice. Only the dense role gets this
+# buffer -- the native/sparse role (a source's own real observation points,
+# e.g. BEDMAP radar tracks) is correctly restricted to strictly inside the
+# region, since that IS meant to represent "this region's own observations."
+_DENSE_RESAMPLE_BUFFER_M = 5000.0
+
 EXPECTED_SAVE_VARIABLES = [
     "xd", "yd", "ud", "vd", "xd_h", "yd_h", "hd", "xd_s", "yd_s", "sd",
     "h_dense", "s_dense", "xcol", "ycol", "xdir", "ydir", "udir", "vdir",
@@ -246,12 +265,18 @@ def _build_region(config: PipelineConfig, regions: DomainRegions, polygon, is_gr
         vel = _filter_by_front(vel, regions.calving_front, regions.grounding_line, regions.front_erosion_band_m)
     thick = thickness.load_thickness(config, polygon)
     surf = surface.load_surface(config, polygon)
+    # Separate, buffered crop feeding only the dense nearest-sample below —
+    # see _DENSE_RESAMPLE_BUFFER_M. `thick`/`surf` (unbuffered) still feed
+    # the native/sparse role further down.
+    buffered_polygon = polygon.buffer(_DENSE_RESAMPLE_BUFFER_M)
+    thick_dense = thickness.load_thickness(config, buffered_polygon)
+    surf_dense = surface.load_surface(config, buffered_polygon)
 
     xd, yd = vel.x, vel.y
     ud, vd = vel.values["u"], vel.values["v"]
 
-    h_dense = nearest_sample(xd, yd, thick)["thickness"]
-    s_dense = nearest_sample(xd, yd, surf)["surface"]
+    h_dense = nearest_sample(xd, yd, thick_dense)["thickness"]
+    s_dense = nearest_sample(xd, yd, surf_dense)["surface"]
 
     # h_dense/s_dense above are the configured source resampled onto the
     # velocity (xd,yd) grid. hd/sd below are the SAME source at its own

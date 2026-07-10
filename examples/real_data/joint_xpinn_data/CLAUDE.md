@@ -30,13 +30,14 @@ All from `/Users/jiapchen/Research/Data`, using the venv python above (`PY` belo
 PY=/Users/jiapchen/.pyenv/versions/3.13.3/envs/Cpu-Diffice-Env/bin/python
 
 # build one config, or every *.yaml in a directory (TEMPLATE.yaml is skipped)
-# saves to joint_xpinn_data/output/<ice_shelf>_<grounding_zone>_<buffer_km>km/<same_name>.mat
+# saves to joint_xpinn_data/output/<dense_bedmachine|sparse_bedmap>/<ice_shelf>_<grounding_zone>_<buffer_km>km/<same_name>.mat
+# (the thickness-variant bucket is auto-detected from thickness_source — see build_dataset.config_thickness_variant)
 $PY -m joint_xpinn_data.build_dataset joint_xpinn_data/configs/amery_lambert.yaml
 $PY -m joint_xpinn_data.build_dataset joint_xpinn_data/configs/
 
 # visualize a built .mat (regions, collocation, thickness, velocity) — figures
 # land in <mat's own folder>/figures/ by default
-$PY -m joint_xpinn_data.diagnostics.plot_validation joint_xpinn_data/output/Amery_Lambert_100km/Amery_Lambert_100km.mat
+$PY -m joint_xpinn_data.diagnostics.plot_validation joint_xpinn_data/output/sparse_bedmap/Amery_Lambert_100km/Amery_Lambert_100km.mat
 
 # compare alternative GL/calving-front sources for a shelf/zone before swapping defaults
 $PY -m joint_xpinn_data.diagnostics.compare_sources --ice-shelf Amery --grounding-zone Lambert --buffer-km 100

@@ -45,7 +45,7 @@ Each dataset you want is one YAML file under `joint_xpinn_data/data_build_config
     joint_xpinn_data/data_build_configs/
 ```
 
-Output defaults to `joint_xpinn_data/output/<ice_shelf>_<grounding_zone>_<buffer_km>km/<ice_shelf>_<grounding_zone>_<buffer_km>km.mat` (override the root with `--out-dir`) — everything scoped to this (ice_shelf, grounding_zone, buffer_km) triple (the `.mat`, its validation figures, its source-comparison and consistency-check figures) lives together in this one per-config folder.
+Output defaults to `joint_xpinn_data/output/<thickness_variant>/<ice_shelf>_<grounding_zone>_<buffer_km>km/<ice_shelf>_<grounding_zone>_<buffer_km>km.mat` (override the root with `--out-dir`) — everything scoped to this (ice_shelf, grounding_zone, buffer_km) triple (the `.mat`, its validation figures, its source-comparison and consistency-check figures) lives together in this one per-config folder. `<thickness_variant>` is `dense_bedmachine` or `sparse_bedmap`, auto-detected from the config's `thickness_source` (see `build_dataset.config_thickness_variant`) — this keeps configs that differ only in thickness source (e.g. `amery_lambert_thickness_bedmachine.yaml` vs `amery_lambert_thickness_bedmap.yaml`) from colliding on the same `config_stem`.
 
 An unknown field in a YAML raises a clear error listing the valid `PipelineConfig` fields, so a typo doesn't fail silently.
 
@@ -113,7 +113,7 @@ This assumes the source is a genuinely ordered polyline (`Geometry.ordered=True`
 
 ```bash
 /Users/jiapchen/.pyenv/versions/3.13.3/envs/Cpu-Diffice-Env/bin/python -m joint_xpinn_data.diagnostics.plot_validation \
-    joint_xpinn_data/output/Amery_Lambert_100km/Amery_Lambert_100km.mat
+    joint_xpinn_data/output/sparse_bedmap/Amery_Lambert_100km/Amery_Lambert_100km.mat
 ```
 
 Produces 4 PNGs in `<mat's folder>/figures/` (or pass `--out-dir`): regions/grounding-line/calving-front/cut-boundary overlay, per-region collocation point clouds, sparse-vs-dense thickness, velocity magnitude + `ols_d`. Add `--show` to also open them interactively.

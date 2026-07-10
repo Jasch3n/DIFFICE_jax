@@ -434,12 +434,29 @@ def config_stem(config: PipelineConfig) -> str:
     return f"{config.ice_shelf}_{config.grounding_zone}_{buffer_str}"
 
 
+def config_thickness_variant(config: PipelineConfig) -> str:
+    """Which thickness-source bucket a config's build belongs in.
+
+    `bedmachine_v3` is a dense gridded product (no native sparse points of
+    its own — see data_sources/thickness.py), so it's "dense_bedmachine".
+    Every other registered thickness source today (`bedmap1_csv`,
+    `bedmap2_csv`, or a `concat` of them) is genuinely sparse scattered
+    radar-track data, so it's "sparse_bedmap". `custom_xy` isn't
+    necessarily either — falls into "sparse_bedmap" as the more common
+    case; reassess this mapping if a second dense source is ever added.
+    """
+    return "dense_bedmachine" if config.thickness_source == "bedmachine_v3" else "sparse_bedmap"
+
+
 def config_output_dir(config: PipelineConfig, out_root: str) -> Path:
-    """Per-config output folder: `<out_root>/<config_stem>/`, holding the
-    built `.mat` plus a `figures/` subfolder for anything scoped to this
-    (ice_shelf, grounding_zone, buffer_km) triple (plot_validation,
-    compare_sources, checks)."""
-    return Path(out_root) / config_stem(config)
+    """Per-config output folder: `<out_root>/<thickness_variant>/<config_stem>/`,
+    holding the built `.mat` plus a `figures/` subfolder for anything scoped
+    to this (ice_shelf, grounding_zone, buffer_km) triple (plot_validation,
+    compare_sources, checks). The thickness-variant bucket (see
+    `config_thickness_variant`) keeps builds that differ only in thickness
+    source (e.g. the two Amery/Lambert ablation configs) from colliding on
+    the same `config_stem`."""
+    return Path(out_root) / config_thickness_variant(config) / config_stem(config)
 
 
 def default_output_path(config: PipelineConfig, out_dir: str) -> Path:

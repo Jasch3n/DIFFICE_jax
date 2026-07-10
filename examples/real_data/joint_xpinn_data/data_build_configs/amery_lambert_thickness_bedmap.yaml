@@ -1,0 +1,91 @@
+# Amery Ice Shelf + Lambert Glacier grounding zone, 100km upstream buffer —
+# THICKNESS-SOURCE ABLATION: sparse BEDMAP1+BEDMAP2 thickness.
+# Same as the canonical amery_lambert.yaml (thickness_source: concat is
+# amery_lambert.yaml's own default already) — duplicated under this name so
+# it can be built side-by-side with amery_lambert_thickness_bedmachine.yaml
+# into a separate --out-dir without colliding with (or disturbing) the
+# canonical build other configs (e.g. the AmeryLambert joint-inversion
+# configs) already depend on. See amery_lambert_thickness_bedmachine.yaml
+# for the dense BedMachine counterpart.
+
+ice_shelf: Amery
+grounding_zone: Lambert
+buffer_km: 100
+
+velocity_source: measures_v2
+# Thickness: BEDMAP1 (1966-2000) concatenated with BEDMAP2's BGR PCMEGA
+# survey (2002-2003, Lambert Glacier / Prince Charles Mountains) — the
+# latter fills real coverage gaps BEDMAP1 alone leaves in this area. This
+# single source feeds both thickness roles: h_dense (resampled onto the
+# velocity grid) and hd (its own native radar-track points).
+thickness_source: concat
+thickness_kwargs:
+  sources:
+    - source: bedmap1_csv
+    - source: bedmap2_csv
+# Surface elevation: BedMachine v3 (a complete gridded DEM). Feeds both
+# s_dense and sd; as a dense grid it has no native sparse points, so sd is
+# resampled onto the velocity grid too (xd_s==xd) — see build_dataset.
+surface_source: bedmachine_v3
+grounding_line_source: measures_boundaries_2008
+calving_front_source: bedmachine_mask
+
+# Restrict the grounded region to Lambert's own fast trunk so the grounded
+# polygon, its grounding line, and the velocity data all coincide — under
+# the "simple" default, grounded_polygon = buffer(gl, 100km) ∩ basin spans
+# the full basin corridor (~100km wide, ~12,000 km^2), whose ring sat a
+# median ~17.5km from the fast-ice data it was meant to bound, and whose GL
+# trailed ~100km past the fast trunk that actually feeds the shelf.
+#
+# min_speed_myr=200 isolates Lambert's fast trunk (GL median speed is only
+# 87 m/yr across the full basin interface, mean 191, max 756 — the trunk is
+# the fast tail). A swept comparison of the flow-filtered GL against the
+# resulting grounded corridor's boundary: at min_speed_myr=100 the GL still
+# trailed a median 14.8km / max 29km past the corridor (the corridor can't
+# reach every 100 m/yr GL point); at 200 with corridor_margin_km=25 they
+# coincide to <500m (velocity-grid resolution), giving a ~2,000 km^2 trunk
+# whose GL is genuinely its own downstream edge. See
+# docs/adr/0002-shelf-class-region-strategy-registry.md.
+region_strategy: flow_restricted
+region_strategy_kwargs:
+  min_speed_myr: 200.0
+  corridor_margin_km: 25.0
+
+# Restrict the floating region to a corridor around Lambert's own flow
+# rather than the whole Amery shelf (which is fed by Lambert + Mellor +
+# Fisher). Traces forward streamlines from Lambert's flux-gate seeds to the
+# calving front and buffers them by margin_km. min_normal_velocity_myr is
+# derived automatically from region_strategy_kwargs.min_speed_myr above
+# (=200), so the corridor is seeded from the same fast trunk the grounded
+# region and its GL represent. Uniform width (taper_km=0), following Byrd's
+# lesson that a tapered buffer can bulge/kink downstream. See
+# floating_region.py and ../HANDOFF.md.
+floating_region_source: flowline_corridor
+floating_region_kwargs:
+  margin_km: 15.0
+  taper_km: 0.0
+
+# Resample the (ordered, measures_boundaries_2008) grounding line to an even
+# arc-length spacing before use. Set fine enough (~40m over Lambert's ~25km
+# flow-filtered trunk) that the reported grounding line x_md/y_md has >=500
+# points, so a joint-inversion workflow can draw 500 interface-matching
+# points per step (the matching sampler draws without replacement, so
+# matching count <= number of x_md points). Also tightens ols_d's
+# near-vertex overshoot vs the old 500m spacing (see ../HANDOFF.md).
+grounding_line_resample_m: 40.0
+
+# Exclude near-stagnant grounded ice (e.g. near the ice divide) from the
+# grounded region's training data — only keep points flowing faster than
+# this.
+grounded_min_speed_myr: 100.0
+
+# Collocation library (xcol/ycol): an independent, density-controlled
+# two-tier Halton sample instead of reusing the velocity data points, so the
+# physics-residual points concentrate near the interfaces (grounding line +
+# calving front) where the flow structure is sharpest. The band within
+# interface_band_km of the interfaces holds interface_density; the rest holds
+# density. See utils/collocation.py.
+collocation:
+  density: 0.4            # pts/km^2 over the whole region
+  interface_density: 2.0  # pts/km^2 within interface_band_km of the interfaces
+  interface_band_km: 5    # half-width (km) of the near-interface band

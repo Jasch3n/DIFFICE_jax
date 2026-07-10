@@ -5,7 +5,7 @@ runtime:
   jax_platform: cpu
 
 data:
-  source: ../joint_xpinn_data/output/Amery_Lambert_100km/Amery_Lambert_100km.mat
+  source: ../joint_xpinn_data/output/sparse_bedmap/Amery_Lambert_100km/Amery_Lambert_100km.mat
   interface_collocation:
     library_size: 300
     sample_count: 100

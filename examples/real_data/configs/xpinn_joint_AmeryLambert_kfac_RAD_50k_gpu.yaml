@@ -18,7 +18,7 @@ runtime:
   # jax_persistent_cache_min_entry_size_bytes: -1
 
 data:
-  source: ../joint_xpinn_data/output/Amery_Lambert_100km/Amery_Lambert_100km.mat
+  source: ../joint_xpinn_data/output/sparse_bedmap/Amery_Lambert_100km/Amery_Lambert_100km.mat
   # gPINN is off, so interface_collocation is unused; kept for schema/parity.
   interface_collocation:
     library_size: 600

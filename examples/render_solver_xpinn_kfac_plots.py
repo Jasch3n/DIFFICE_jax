@@ -30,14 +30,28 @@ Real vs. synthetic data
 -----------------------
 For synthetic ISSM data, viscosity ``mud`` and basal friction ``alpha2d`` are
 ground truth, so the mu/C figure shows truth / inferred / error. For REAL
-data they are inversion *targets* stored as NaN, and surface elevation ``sd``
-lives on its own ``xd_s``/``yd_s`` grid (independent of thickness ``xd_h``/
-``yd_h``). The render layer detects an all-NaN "truth" field and falls back to
-a predicted-only rendering; a field with truth but no prediction falls back to
-observed-only. This makes both the mu/C figure and the surface row degrade
-sensibly on real data without a separate code path. When training on real
-data, use the plain ``joint-inversion`` workflow, never
+data they are inversion *targets* stored as NaN; the render layer detects an
+all-NaN "truth" field and falls back to a predicted-only rendering, so the
+mu/C figure degrades sensibly on real data without a separate code path. When
+training on real data, use the plain ``joint-inversion`` workflow, never
 ``joint-inversion-regression`` (the latter consumes the NaN targets).
+
+Surface elevation ``sd`` lives on its own ``xd_s``/``yd_s`` grid (independent
+of thickness ``xd_h``/``yd_h``) — the solver evaluates the network there
+directly (``region["s_surface"]``, see ``diffice_jax.core.solver``), so it is
+always directly comparable to the observed ``sd`` truth without needing the
+two grids to coincide.
+
+The thickness (``h``) and surface (``s``) rows each render the network's
+prediction over the *dense* velocity grid ``xd``/``yd`` in addition to the
+sparse observation points, since the network is continuous and can be
+evaluated anywhere — even where the underlying observational source (e.g.
+scattered BEDMAP radar tracks) is sparse. Ground truth and the relative-error
+panel stay restricted to the sparse measurements themselves, since a sparse
+source has no real dense truth to compare a dense prediction against. When
+the observational source is itself dense (e.g. BedMachine), the sparse role
+is resampled onto the same velocity grid at data-build time, so the two
+naturally collapse onto the same points.
 """
 from pathlib import Path
 import argparse
@@ -180,7 +194,14 @@ def _add_colorbar(fig, ax, image, label):
     _set_axis_font_weight(cbar.ax)
 
 
+_AXES_BACKGROUND = "#c9c9c9"
+
+
 def _tripcolor_regions(ax, regions, key, title, cmap, vmin, vmax):
+    # A light-gray (not white) axes background so a colormap's near-white
+    # end (e.g. "terrain"'s high-elevation tan/white) stays visible instead
+    # of blending into an empty white figure and looking like missing data.
+    ax.set_facecolor(_AXES_BACKGROUND)
     image = None
     for region in regions:
         values = np.asarray(region[key]).reshape(-1)
@@ -686,28 +707,33 @@ def _prediction_plot_cache(solver, predictions, diagnostics, loss_history, tag, 
             data_field_regions["v"].append(_field_region(x, y, v_true, v_pred))
         x_h = np.asarray(jax.device_get(region["x_h"])).reshape(-1)
         y_h = np.asarray(jax.device_get(region["y_h"])).reshape(-1)
+        # The network is continuous, so its thickness/surface predictions are
+        # always rendered densely over the velocity grid (x,y) — even when
+        # the observed source is sparse. Truth and misfit stay restricted to
+        # the sparse measurements themselves (below); a sparse source has no
+        # real dense truth to compare a dense prediction against.
+        h_dense_pred = np.asarray(jax.device_get(region["h"])).reshape(-1)
+        data_field_regions["h"].append(_field_region(x, y, None, h_dense_pred))
         if h_true is not None:
-            h_pred = np.asarray(jax.device_get(region["h_thickness"])).reshape(-1)
-            data_field_regions["h"].append(_field_region(x_h, y_h, h_true, h_pred))
+            h_sparse_pred = np.asarray(jax.device_get(region["h_thickness"])).reshape(-1)
+            data_field_regions["h"].append(_field_region(x_h, y_h, h_true, h_sparse_pred))
+
+        s_dense_pred = np.asarray(jax.device_get(region["s"])).reshape(-1)
+        data_field_regions["s"].append(_field_region(x, y, None, s_dense_pred))
         if surface is not None:
             s_true, x_s, y_s = surface
             if x_s is None:  # legacy: surface shares the thickness grid
                 x_s, y_s = x_h, y_h
-            # The network's surface prediction (s_thickness) is evaluated at
-            # the thickness points. Pair it with observed s only when the
-            # surface points coincide with them (synthetic/co-located case);
-            # otherwise render observed-only, since we have no prediction at
-            # the independent xd_s/yd_s points (see module docstring).
-            s_pred = np.asarray(jax.device_get(region["s_thickness"])).reshape(-1)
-            colocated = (
-                x_s.shape == x_h.shape
-                and s_pred.shape == x_s.shape
-                and np.allclose(x_s, x_h)
-                and np.allclose(y_s, y_h)
-            )
-            data_field_regions["s"].append(
-                _field_region(x_s, y_s, s_true, s_pred if colocated else None)
-            )
+                s_sparse_pred = np.asarray(jax.device_get(region["s_thickness"])).reshape(-1)
+            else:
+                # s_surface is the network's own prediction evaluated directly
+                # at the surface's own native xd_s/yd_s points (see
+                # solver.py's _predict_xpinn_fields) — always comparable to
+                # the observed `sd` truth, unlike s_thickness (evaluated at
+                # the thickness grid, only meaningful if it happens to
+                # coincide with xd_s/yd_s).
+                s_sparse_pred = np.asarray(jax.device_get(region["s_surface"])).reshape(-1)
+            data_field_regions["s"].append(_field_region(x_s, y_s, s_true, s_sparse_pred))
 
     for region in diagnostics["regions"]:
         idx = region["index"]

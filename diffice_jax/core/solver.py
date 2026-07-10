@@ -458,15 +458,18 @@ class DIFFICESolver:
             data = state.normalized_data[idx]
             X = data[0][0]
             Xh = data[0][1]
+            Xs = data[0][3]
             raw = data[4][3]
             idxval = jnp.asarray(data[4][4][0], dtype=jnp.int32).reshape(-1)
             idxval_h = jnp.asarray(data[4][4][1], dtype=jnp.int32).reshape(-1)
+            idxval_s = jnp.asarray(data[4][4][2], dtype=jnp.int32).reshape(-1)
             scale = state.scales[pos]
             dmean = scale.data_mean
             drange = scale.data_range
             dynamic = scale.dynamic_scale
             output = state.solution[0](state.params, X, idx)
             output_h = state.solution[0](state.params, Xh, idx)
+            output_s = state.solution[0](state.params, Xs, idx)
             basal = bool(state.basal_mask[pos])
             C = output[:, 5:6] * dynamic.c0 if basal and output.shape[1] > 5 else jnp.full_like(output[:, 4:5], jnp.nan)
             region = {
@@ -476,12 +479,21 @@ class DIFFICESolver:
                 "y": jnp.asarray(raw[1]).reshape(-1, 1)[idxval],
                 "x_h": jnp.asarray(raw[4]).reshape(-1, 1)[idxval_h],
                 "y_h": jnp.asarray(raw[5]).reshape(-1, 1)[idxval_h],
+                "x_s": jnp.asarray(state.raw_data["xd_s"][0, idx]).reshape(-1, 1)[idxval_s],
+                "y_s": jnp.asarray(state.raw_data["yd_s"][0, idx]).reshape(-1, 1)[idxval_s],
                 "u": output[:, 0:1] * drange.u_range + dmean.u_mean,
                 "v": output[:, 1:2] * drange.v_range + dmean.v_mean,
                 "h": output[:, 2:3] * dmean.h_mean,
                 "h_thickness": output_h[:, 2:3] * dmean.h_mean,
                 "s": output[:, 3:4] * drange.s_range + dmean.s_mean,
                 "s_thickness": output_h[:, 3:4] * drange.s_range + dmean.s_mean,
+                # Surface elevation's own prediction, evaluated at its own
+                # native xd_s/yd_s points (independent of the thickness grid
+                # — see data_sources/surface.py in joint_xpinn_data). Unlike
+                # s_thickness (evaluated at the thickness points, only
+                # meaningful if xd_s happens to coincide with xd_h), this is
+                # always directly comparable to the observed `sd` truth.
+                "s_surface": output_s[:, 3:4] * drange.s_range + dmean.s_mean,
                 "mu": output[:, 4:5] * dynamic.mu0,
                 "C": C,
             }

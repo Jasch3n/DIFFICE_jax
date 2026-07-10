@@ -1,0 +1,119 @@
+{
+  "data": {
+    "source": "real_data/configs/../joint_xpinn_data/output/Amery_Lambert_100km/Amery_Lambert_100km.mat",
+    "sampling_counts": [
+      [
+        512,
+        512
+      ],
+      [
+        512,
+        512
+      ],
+      [
+        512,
+        512
+      ],
+      [
+        500,
+        1500
+      ],
+      [
+        200,
+        200
+      ],
+      500
+    ],
+    "collocation_library_size": null,
+    "validation": null,
+    "regression_workflow": false,
+    "grounded_only_interface_mu_ct": false,
+    "interface_mu_source": "floating",
+    "legacy_matlab_keys": true
+  },
+  "model": {
+    "workflow": "xpinn",
+    "regions": [
+      {
+        "region_kind": "grounded",
+        "index": 0,
+        "legacy_index": null
+      },
+      {
+        "region_kind": "floating",
+        "index": 1,
+        "legacy_index": null
+      }
+    ],
+    "network": {
+      "depth": 6,
+      "width": 30,
+      "activation": 0,
+      "first_layer_scale": 1.0,
+      "embedding": false,
+      "embed_n": 10,
+      "embed_std": 1.0
+    },
+    "per_region_networks": null,
+    "per_region_embeddings": null,
+    "anisotropic": false
+  },
+  "equation": {
+    "name": "ssa_iso",
+    "boundary_condition": "calving_front",
+    "vanilla_floating_ssa": true
+  },
+  "loss": {
+    "name": "joint_inversion",
+    "weights": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "matching": true,
+    "calving_front": true,
+    "match_weight": 1.0,
+    "match_component_weights": null,
+    "use_gpinn": false,
+    "gpinn_weight": 0.0,
+    "mu_grad_weight": 0.0,
+    "active_regions": [
+      0,
+      1
+    ],
+    "global_weights": {
+      "data": 1.0,
+      "equation": 0.01,
+      "calving_front": 0.05,
+      "matching": 1.0,
+      "gpinn": 0.0,
+      "mu_gradient": 0.0
+    }
+  },
+  "training": {
+    "stages": [
+      {
+        "optimizer": {
+          "name": "kfac",
+          "learning_rate": null,
+          "damping": NaN,
+          "parameters": {
+            "preset": "xpinn_joint_inversion_reference",
+            "log_rate": 5,
+            "interface_points": null,
+            "active_regions": [
+              0,
+              1
+            ]
+          }
+        },
+        "iterations": 20,
+        "adaptive_sampling": true,
+        "adaptive_sampling_burn_in": 5,
+        "adaptive_sampling_period": 5,
+        "checkpoint_interval": null
+      }
+    ]
+  },
+  "seed": 8132002
+}

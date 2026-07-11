@@ -1,0 +1,84 @@
+# Ross East / Byrd joint inversion (real data), CPU.
+# KFAC, 50k iterations, RAD adaptive collocation sampling, no gPINN.
+# Collocation points per step: 500 (grounded) / 1500 (floating).
+# Data: joint_xpinn_data build with the two-tier collocation library enabled.
+name: xpinn_joint_RossByrd_kfac_RAD_50k
+workflow: joint_inversion
+
+runtime:
+  jax_platform: cpu
+
+data:
+  source: ../joint_xpinn_data/output/dense_bedmachine/Ross East_Byrd_100km/Ross East_Byrd_100km.mat
+  # gPINN is off, so interface_collocation is unused; kept for schema/parity.
+  interface_collocation:
+    library_size: 600
+    sample_count: 600
+  sampling_counts:
+    # thickness_source/surface_source are both bedmachine_v3 (dense), so
+    # xd_h==xd_s==xd exactly for both regions — no Amery-style sparse-
+    # coverage cap needed; velocity/thickness/surface all draw (without
+    # replacement) from the same 6813 (grounded) / 110684 (floating) points.
+    velocity_data: [1028, 1028]
+    thickness_data: [1028, 1028]
+    surface_data: [1028, 1028]
+    # Collocation points drawn from each region's library per step:
+    # [grounded, floating]. The build's libraries (~6802 / ~110604 points,
+    # sized to match each region's own velocity-observation count — see
+    # data_build_configs/ross_east_byrd.yaml) are large enough for these.
+    collocation: [500, 1500]
+    calving_front: [500, 500]
+    # Sampled without replacement from x_md (the grounding line's matching
+    # points), unlike calving_front. grounding_line_resample_m=500.0 (vs.
+    # Amery's 40.0, tuned for a ~25km trunk) gives Byrd's ~20km fast trunk
+    # only 50 points, so this must not exceed 50 — capped there exactly,
+    # well below Amery's 500.
+    matching: 50
+
+model:
+  workflow: xpinn
+  regions:
+    - index: 0
+      kind: grounded
+    - index: 1
+      kind: floating
+  network:
+    depth: 6
+    width: 30
+
+equation:
+  name: ssa_iso
+
+loss:
+  name: joint_inversion
+  matching: true
+  calving_front: true
+  use_gpinn: false
+  active_regions: [0, 1]
+
+training:
+  seed: 8132002
+  global_weights:
+    data: 1.0
+    equation: 0.01
+    calving_front: 0.05
+    matching: 1.0
+    gpinn: 0.0
+    mu_gradient: 0.0
+  stages:
+    - optimizer:
+        name: kfac
+        learning_rate: null
+        damping: .nan
+        parameters:
+          preset: xpinn_joint_inversion_reference
+          log_rate: 200
+          interface_points: all
+          active_regions: [0, 1]
+      iterations: 50000
+      adaptive_sampling: true
+      adaptive_sampling_burn_in: 1500
+      adaptive_sampling_period: 50
+
+artifacts:
+  output_dir: ../RossByrd_kfac_RAD_50k

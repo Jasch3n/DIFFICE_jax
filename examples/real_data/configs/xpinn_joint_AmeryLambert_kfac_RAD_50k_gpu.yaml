@@ -33,7 +33,7 @@ data:
     # its count is capped below that.
     surface_data: [512, 1028]
     # Collocation points drawn from each region's library per step:
-    # [grounded, floating]. The build's libraries (~3047 / ~27967 points for
+    # [grounded, floating]. The build's libraries (~8633 / ~105335 points for
     # Amery/Lambert) are large enough for these counts.
     collocation: [500, 1500]
     calving_front: [500, 500]

@@ -78,8 +78,12 @@ grounded_min_speed_myr: 100.0
 # physics-residual points concentrate near the interfaces (grounding line +
 # calving front) where the flow structure is sharpest. The band within
 # interface_band_km of the interfaces holds interface_density; the rest holds
-# density. See utils/collocation.py.
+# density. Per-region [grounded, floating] pairs (see
+# ../ross_east_byrd.yaml and utils/collocation.py), sized so each region's
+# total collocation count matches its own velocity-observation count exactly
+# (8631 grounded / 105235 floating) while keeping the same core:interface
+# 1:5 density ratio as before.
 collocation:
-  density: 1.2            # pts/km^2 over the whole region
-  interface_density: 6.0  # pts/km^2 within interface_band_km of the interfaces
-  interface_band_km: 5    # half-width (km) of the near-interface band
+  density: [3.40, 4.52]     # pts/km^2 (grounded, floating)
+  interface_density: [17.00, 22.58]  # pts/km^2 within interface_band_km of the interfaces
+  interface_band_km: 5      # half-width (km) of the near-interface band

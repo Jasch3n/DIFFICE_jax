@@ -227,11 +227,62 @@ def taper_margins_m(
     return min_margin_km * 1000.0 + (margin_km - min_margin_km) * 1000.0 * taper_fraction
 
 
+def _split_paths(points, distance_from_gl_m, *aligned):
+    """Undo `trace_grounding_zone_flow`'s `np.concatenate`: split `points`
+    (and any other per-point array of the same length, e.g. `margins_m`)
+    back into one segment per traced streamline, using each streamline's
+    own `distance_from_gl_m` restart at 0 as the path boundary."""
+    starts = np.flatnonzero(distance_from_gl_m == 0.0)
+    ends = np.append(starts[1:], len(points))
+    return [(points[s:e], *(a[s:e] for a in aligned)) for s, e in zip(starts, ends)]
+
+
+def _prune_streamlines_near_hole(restricted, paths_with_margins, prune_km, shelf_polygon, grounded_polygon, config):
+    """Drop every whole streamline that comes within `prune_km` of
+    `restricted`'s own interior hole(s) and rebuild the corridor from
+    what's left, then return `(rebuilt_polygon, kept_paths)`.
+
+    For Amery/Lambert, the corridor's interior hole is a real obstacle
+    (confirmed against BedMachine's mask: a rock outcrop/ice rise, not open
+    shelf) that the traced flow genuinely diverges around — but the hole's
+    *shape* is a construction artifact: the streamlines that pass closest
+    to the obstacle are exactly what buffers into its ragged inner rim,
+    since `margin_km` isn't wide enough to bridge the gap between the two
+    diverging lobes cleanly. Dropping those obstacle-hugging streamlines
+    entirely (not just the points nearest the hole — a fixed `margin_km`
+    buffer around a truncated streamline would just recreate the same
+    ragged edge one step further out) and re-buffering only the remaining,
+    farther-away streamlines pulls the boundary back to a cleaner, rounder
+    exclusion. A no-op (returns the input unchanged) if the corridor has no
+    interior hole, or nothing is within `prune_km` of one.
+    """
+    parts = list(restricted.geoms) if restricted.geom_type == "MultiPolygon" else [restricted]
+    hole_rings = [ring for p in parts for ring in p.interiors]
+    paths = [pts for pts, _ in paths_with_margins]
+    if not hole_rings:
+        return restricted, paths
+    hole_zone = shapely.union_all([shapely.Polygon(r) for r in hole_rings])
+
+    prune_m = prune_km * 1000.0
+    kept = [
+        (pts, m) for pts, m in paths_with_margins
+        if shapely.distance(shapely.points(pts[:, 0], pts[:, 1]), hole_zone).min() >= prune_m
+    ]
+    if len(kept) == len(paths_with_margins):
+        return restricted, paths
+
+    kept_points = np.concatenate([pts for pts, _ in kept], axis=0)
+    kept_margins = np.concatenate([m for _, m in kept], axis=0)
+    rebuilt = _corridor_from_points(kept_points, kept_margins, shelf_polygon, grounded_polygon, config)
+    return rebuilt, [pts for pts, _ in kept]
+
+
 def process_flowline_corridor(
     config: PipelineConfig, shelf_polygon, grounded_polygon, margin_km: float,
     step_m: float = 1500.0, max_steps: int = 1000, smooth_km: float = 0.5,
     min_normal_velocity_myr: float = 0.0, pad_km: float = 20.0,
     min_margin_km: float = 2.0, taper_km: float | None = None,
+    prune_near_hole_km: float | None = None,
 ):
     """Trace forward streamlines from only `config.grounding_zone`'s own
     flow (`trace_grounding_zone_flow`), taper the buffer radius with
@@ -246,6 +297,10 @@ def process_flowline_corridor(
     basin's real territory extends beyond its own traced centerline,"
     not derived from competition against neighboring basins' flow the
     way `process_basin_partition` is.
+
+    `prune_near_hole_km` (None by default, so every other config's
+    behavior is unchanged): an Amery/Lambert-specific escape hatch for an
+    interior hole in the corridor — see `_prune_streamlines_near_hole`.
     """
     all_points, distance_from_gl_m, exit_points = trace_grounding_zone_flow(
         config, shelf_polygon, step_m=step_m, max_steps=max_steps, smooth_km=smooth_km,
@@ -253,6 +308,15 @@ def process_flowline_corridor(
     )
     margins_m = taper_margins_m(distance_from_gl_m, margin_km, min_margin_km, taper_km)
     restricted = _corridor_from_points(all_points, margins_m, shelf_polygon, grounded_polygon, config)
+
+    if prune_near_hole_km is not None:
+        paths_with_margins = _split_paths(all_points, distance_from_gl_m, margins_m)
+        restricted, kept_paths = _prune_streamlines_near_hole(
+            restricted, paths_with_margins, prune_near_hole_km, shelf_polygon, grounded_polygon, config,
+        )
+        if len(kept_paths) != len(paths_with_margins):
+            exit_points = np.array([p[-1] for p in kept_paths if len(p) > 0])
+
     return restricted, exit_points
 
 

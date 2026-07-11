@@ -60,6 +60,14 @@ region_strategy_kwargs:
 # region and its GL represent. Uniform width (taper_km=0), following Byrd's
 # lesson that a tapered buffer can bulge/kink downstream. See
 # floating_region.py and ../HANDOFF.md.
+#
+# PROBLEMATIC, not yet fixed: at this margin_km, the resulting
+# floating_polygon has a genuine interior hole (a real rock outcrop/ice
+# rise the flow diverges around, confirmed against BedMachine's mask) with
+# a ragged, construction-artifact boundary — see ../HANDOFF.md's "Known
+# limitations" entry for what's been tried (streamline pruning: ruled out,
+# either a no-op or destroys the corridor) and the likely real fix (direct
+# BedMachine mask subtraction, not yet implemented). Deprioritized for now.
 floating_region_source: flowline_corridor
 floating_region_kwargs:
   margin_km: 15.0

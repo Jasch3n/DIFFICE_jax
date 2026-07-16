@@ -751,7 +751,7 @@ def _prediction_plot_cache(solver, predictions, diagnostics, loss_history, tag, 
             y_ref = terms[:, 3:6]
         y_norm = np.max(np.abs(y_ref), axis=1)
         residual_regions["x"].append(_value_region(x, y, residual_x / (x_norm + 1e-10)))
-        residual_regions["y"].append(_value_region(x, y, residual_y / (10.0 * (y_norm + 1e-10))))
+        residual_regions["y"].append(_value_region(x, y, residual_y / (y_norm + 1e-10)))
 
         term1_3 = terms[:, 2]
         denom = np.where(np.abs(term1_3) < 1e-10, np.where(term1_3 < 0.0, -1e-10, 1e-10), term1_3)
